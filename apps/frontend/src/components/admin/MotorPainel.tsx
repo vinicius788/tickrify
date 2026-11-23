@@ -1,33 +1,25 @@
-import { useAuth } from '@clerk/clerk-react';
-import { useQuery } from '@tanstack/react-query';
-import { Card } from '@/components/ui/card';
-import { buildApiUrl } from '@/lib/api';
+import { CLASSE_ATIVO, Chip, Estado, Painel, TIPO_ENTRADA, Tabela, dataHora, pct, rFmt, useAdminQuery, type Tom } from '@/components/admin/AdminUi';
 
 type Stats = {
   analyses: number;
-  enterNowPct: number | null;
-  watchPct: number | null;
-  watchTracked: number;
-  watchTouched: number;
-  watchTouchedPct: number | null;
+  clearPct: number | null;
   closedTrades: number;
   win: number;
   loss: number;
   timeout: number;
   meanR: number | null;
+  decision: 'keep' | 'disable' | 'wait';
+  verdict: string;
 };
 type Report = {
-  since: string;
+  since: string | null;
   total: Stats;
-  classes: { assetClass: string; stats: Stats }[];
-  enterNow: { trades: number; meanR: number | null; verdict: string };
+  byEntry: { entry: string; stats: Stats }[];
+  byClass: { assetClass: string; stats: Stats }[];
+  agreement: { agreement: string; count: number }[];
   noCandles: { reason: string; count: number }[];
-  profiles?: { profile: 'conservative' | 'balanced' | 'aggressive'; stats: Stats; verdict: string }[];
 };
 
-const PERFIL: Record<string, string> = { conservative: 'Conservador', balanced: 'Equilibrado', aggressive: 'Arriscado' };
-
-const CLASSE: Record<string, string> = { metal: 'Metais', forex: 'Forex', crypto: 'Cripto', other: 'Outros' };
 const MOTIVO_SEM_VELAS: Record<string, string> = {
   symbol_timeout: 'Leitura do ativo passou do tempo',
   symbol_unreadable: 'Ativo ilegível no print',
@@ -41,134 +33,90 @@ const MOTIVO_SEM_VELAS: Record<string, string> = {
   stale_withheld: 'Print antigo, velas retidas',
   not_recorded: 'Motivo não registrado',
 };
-const pct = (v: number | null) => (v === null ? '·' : `${v.toFixed(0)}%`);
-const r = (v: number | null) => (v === null ? '·' : `${v >= 0 ? '+' : ''}${v.toFixed(2).replace('.', ',')}R`);
+const TOM: Record<Stats['decision'], Tom> = { keep: 'ok', disable: 'ruim', wait: 'aviso' };
+const COLUNAS = [
+  { rotulo: '' }, { rotulo: 'Análises', direita: true }, { rotulo: 'Operação clara', direita: true },
+  { rotulo: 'Trades fechados', direita: true }, { rotulo: 'W/L/T', direita: true }, { rotulo: 'R por trade', direita: true }, { rotulo: 'Regra' },
+];
 
 function Linha({ rotulo, s, forte }: { rotulo: string; s: Stats; forte?: boolean }) {
   return (
-    <tr className={`border-t border-[var(--border-subtle)] ${forte ? 'font-medium text-[var(--text-primary)]' : 'text-[var(--text-soft)]'}`}>
+    <tr className={`border-t border-[var(--border-subtle)] ${forte ? 'font-medium text-[var(--text-primary)]' : ''}`}>
       <td className="py-1.5 pr-3">{rotulo}</td>
-      <td className="py-1.5 pr-3">{s.analyses}</td>
-      <td className="py-1.5 pr-3">{pct(s.enterNowPct)}</td>
-      <td className="py-1.5 pr-3">{pct(s.watchPct)}</td>
-      <td className="py-1.5 pr-3">
-        {pct(s.watchTouchedPct)} <span className="text-[var(--text-faint)]">({s.watchTouched}/{s.watchTracked})</span>
-      </td>
-      <td className="py-1.5 pr-3">{s.closedTrades}</td>
-      <td className="py-1.5 pr-3">{s.win}/{s.loss}/{s.timeout}</td>
-      <td className="py-1.5">{r(s.meanR)}</td>
+      <td className="py-1.5 pr-3 text-right tabular-nums">{s.analyses}</td>
+      <td className="py-1.5 pr-3 text-right tabular-nums">{pct(s.clearPct)}</td>
+      <td className="py-1.5 pr-3 text-right tabular-nums">{s.closedTrades}</td>
+      <td className="py-1.5 pr-3 text-right tabular-nums">{`${s.win}/${s.loss}/${s.timeout}`}</td>
+      <td className="py-1.5 pr-3 text-right tabular-nums">{rFmt(s.meanR)}</td>
+      <td className="py-1.5"><Chip tom={TOM[s.decision]}>{s.verdict}</Chip></td>
     </tr>
   );
 }
 
-/** Aba "Motor": desempenho desde a correcao do fuso e a decisao ja aplicada. So leitura. Ver `GET admin/engine`. */
+/** Aba "Motor": o motor novo por tipo de entrada e classe de ativo, com a regra do projeto. So leitura (`GET admin/engine`). */
 export default function MotorPainel() {
-  const { getToken, isSignedIn } = useAuth();
-  const query = useQuery<Report, Error>({
-    queryKey: ['admin-engine'],
-    enabled: Boolean(isSignedIn),
-    staleTime: 60_000,
-    retry: false,
-    queryFn: async () => {
-      const token = await getToken({ skipCache: true });
-      const res = await fetch(buildApiUrl('/api/admin/engine'), { headers: token ? { Authorization: `Bearer ${token}` } : {} });
-      if (!res.ok) throw new Error(`Falha ao carregar (${res.status})`);
-      return res.json();
-    },
-  });
+  const query = useAdminQuery<Report>('engine', 60_000);
   const data = query.data;
+  const totalVotos = data ? data.agreement.reduce((sum, a) => sum + a.count, 0) : 0;
 
   return (
-    <section className="mt-10 space-y-4">
-      <div>
-        <h2 className="text-lg font-semibold text-[var(--text-primary)]">Motor</h2>
-        <p className="mt-1 text-xs text-[var(--text-faint)]">
-          Desde a correção do fuso (09/11/2026 14:09 UTC). WATCH tocado conta só janelas já fechadas. R por trade é líquido de spread.
-        </p>
-      </div>
-
-      {query.isLoading ? <p className="text-sm text-[var(--text-faint)]">Carregando…</p> : null}
-      {query.error ? <p className="text-sm text-[var(--tone-down-2)]">{query.error.message}</p> : null}
-
-      {data ? (
+    <section className="space-y-4">
+      <Estado query={query} />
+      {data && data.total.analyses === 0 ? <p className="text-sm text-[var(--text-faint)]">Ainda não há análise do motor novo (com votos dos leitores).</p> : null}
+      {data && data.total.analyses > 0 ? (
         <>
-          <Card className="border-[var(--border-strong)] bg-[var(--fill-1)] p-4">
-            <p className="text-[11px] text-[var(--text-faint)]">R por trade do ENTER_NOW</p>
-            <p className="mt-1 text-sm text-[var(--text-soft)]">
-              {r(data.enterNow.meanR)} em {data.enterNow.trades} trades. {data.enterNow.verdict}
+          <Painel titulo="Regra do projeto" nota={`Só análises do motor novo (result.engine.vote)${data.since ? `, desde ${dataHora(data.since)}` : ''}. R por trade é o do rastreador, líquido de spread.`}>
+            <p className="text-sm text-[var(--text-soft)]">
+              Precisa de n &gt;= 30 trades fechados para decidir. Mantém com R &gt;= -0,05R. Alerta em -0,15R ou pior. Entre os dois, espera.
             </p>
-          </Card>
+          </Painel>
 
-          {data.profiles && data.profiles.length > 0 && (
-            <Card className="border-[var(--border-strong)] bg-[var(--fill-1)] p-4">
-              <h3 className="text-sm font-semibold text-[var(--text-primary)]">Perfis de risco</h3>
-              <div className="mt-2 overflow-x-auto">
-                <table className="w-full text-left text-sm">
-                  <thead className="text-[11px] text-[var(--text-faint)]">
-                    <tr>
-                      <th className="py-1 pr-3">Perfil</th>
-                      <th className="py-1 pr-3">Análises</th>
-                      <th className="py-1 pr-3">ENTER_NOW</th>
-                      <th className="py-1 pr-3">WATCH</th>
-                      <th className="py-1 pr-3">WATCH tocado</th>
-                      <th className="py-1 pr-3">Trades</th>
-                      <th className="py-1 pr-3">W/L/T</th>
-                      <th className="py-1">R por trade</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.profiles.map((p) => (
-                      <Linha key={p.profile} rotulo={PERFIL[p.profile] ?? p.profile} s={p.stats} />
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              {data.profiles.map((p) => (
-                <p key={p.profile} className="mt-1 text-sm text-[var(--text-soft)]">
-                  {`${PERFIL[p.profile] ?? p.profile}: ${p.verdict}`}
-                </p>
+          <Painel titulo="Por tipo de entrada" nota="Agora, recuo, rompimento ou esperar, como o código escolheu.">
+            <Tabela colunas={COLUNAS}>
+              <Linha rotulo="Todas" s={data.total} forte />
+              {data.byEntry.map((e) => (
+                <Linha key={e.entry} rotulo={TIPO_ENTRADA[e.entry] ?? e.entry} s={e.stats} />
               ))}
-            </Card>
-          )}
+            </Tabela>
+          </Painel>
 
-          <Card className="border-[var(--border-strong)] bg-[var(--fill-1)] p-4">
-            <p className="text-[11px] text-[var(--text-faint)]">Análises sem velas, por motivo</p>
-            {data.noCandles.length === 0 ? (
-              <p className="mt-1 text-sm text-[var(--text-soft)]">Nenhuma.</p>
-            ) : (
-              <ul className="mt-1 space-y-0.5 text-sm text-[var(--text-soft)]">
-                {data.noCandles.map((item) => (
-                  <li key={item.reason}>{`${MOTIVO_SEM_VELAS[item.reason] ?? item.reason}: ${item.count}`}</li>
+          <div className="grid gap-4 xl:grid-cols-3">
+            <Painel titulo="Por classe de ativo" className="xl:col-span-2">
+              <Tabela colunas={COLUNAS}>
+                {data.byClass.map((c) => (
+                  <Linha key={c.assetClass} rotulo={CLASSE_ATIVO[c.assetClass] ?? c.assetClass} s={c.stats} />
                 ))}
-              </ul>
-            )}
-          </Card>
+              </Tabela>
+            </Painel>
 
-          <Card className="border-[var(--border-strong)] bg-[var(--fill-1)] p-4">
-            <h3 className="text-sm font-semibold text-[var(--text-primary)]">Por classe de ativo</h3>
-            <div className="mt-2 overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead className="text-[11px] text-[var(--text-faint)]">
-                  <tr>
-                    <th className="py-1 pr-3">Classe</th>
-                    <th className="py-1 pr-3">Análises</th>
-                    <th className="py-1 pr-3">ENTER_NOW</th>
-                    <th className="py-1 pr-3">WATCH</th>
-                    <th className="py-1 pr-3">WATCH tocado</th>
-                    <th className="py-1 pr-3">Trades</th>
-                    <th className="py-1 pr-3">W/L/T</th>
-                    <th className="py-1">R por trade</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.classes.map((c) => (
-                    <Linha key={c.assetClass} rotulo={CLASSE[c.assetClass] ?? c.assetClass} s={c.stats} />
+            <div className="space-y-4">
+              <Painel titulo="Concordância dos leitores" nota="Quantos leitores votaram igual.">
+                <ul className="space-y-1 text-sm text-[var(--text-soft)]">
+                  {data.agreement.map((a) => (
+                    <li key={a.agreement} className="flex justify-between gap-3">
+                      <span>{a.agreement}</span>
+                      <span className="tabular-nums">{`${a.count} (${pct((100 * a.count) / totalVotos)})`}</span>
+                    </li>
                   ))}
-                  <Linha rotulo="Total" s={data.total} forte />
-                </tbody>
-              </table>
+                </ul>
+              </Painel>
+
+              <Painel titulo="Análises sem velas, por motivo">
+                {data.noCandles.length === 0 ? (
+                  <p className="text-sm text-[var(--text-soft)]">Nenhuma.</p>
+                ) : (
+                  <ul className="space-y-0.5 text-sm text-[var(--text-soft)]">
+                    {data.noCandles.map((item) => (
+                      <li key={item.reason} className="flex justify-between gap-3">
+                        <span>{MOTIVO_SEM_VELAS[item.reason] ?? item.reason}</span>
+                        <span className="tabular-nums">{item.count}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </Painel>
             </div>
-          </Card>
+          </div>
         </>
       ) : null}
     </section>

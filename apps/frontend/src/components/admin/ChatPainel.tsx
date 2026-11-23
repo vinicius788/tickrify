@@ -175,7 +175,7 @@ export default function ChatPainel() {
                   <span className="flex shrink-0 items-center gap-2 text-[11px] text-[var(--text-faint)]">
                     <span>{quando(t.lastMessageAt)}</span>
                     {t.unread > 0 ? (
-                      <span key="nova" className="rounded-full bg-amber-500/20 px-2 text-[var(--tone-warn-1)]">{`${t.unread} nova(s)`}</span>
+                      <span key="nova" className="rounded-full border border-[var(--signal-hold-border)] bg-[var(--signal-hold-bg)] px-2 text-[var(--signal-hold)]">{`${t.unread} nova(s)`}</span>
                     ) : null}
                     {t.lastAuthor === 'founder' && t.lastMessageAt && !founderMessageSeen(t.lastMessageAt, t.userReadAt) ? (
                       <span key="nao-visto">não viu</span>

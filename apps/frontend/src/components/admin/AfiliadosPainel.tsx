@@ -22,10 +22,10 @@ import {
 type Patch = Partial<Pick<AdminAffiliate, 'status' | 'commissionRateBps' | 'referralCode' | 'couponCode'>>;
 
 const STATUS: Record<AffiliateStatus, { texto: string; classe: string }> = {
-  PENDING: { texto: 'aguardando aprovação', classe: 'bg-amber-500/15 text-[var(--tone-warn-1)] border-amber-500/30' },
-  ACTIVE: { texto: 'ativo', classe: 'bg-emerald-500/15 text-[var(--tone-up-1)] border-emerald-500/30' },
-  REJECTED: { texto: 'rejeitado', classe: 'bg-zinc-500/15 text-[var(--text-dim)] border-zinc-500/30' },
-  SUSPENDED: { texto: 'suspenso', classe: 'bg-red-500/15 text-[var(--tone-down-1)] border-red-500/30' },
+  PENDING: { texto: 'aguardando aprovação', classe: 'border-[var(--signal-hold-border)] bg-[var(--signal-hold-bg)] text-[var(--signal-hold)]' },
+  ACTIVE: { texto: 'ativo', classe: 'border-[var(--signal-buy-border)] bg-[var(--signal-buy-bg)] text-[var(--signal-buy)]' },
+  REJECTED: { texto: 'rejeitado', classe: 'border-[var(--border-strong)] bg-[var(--fill-2)] text-[var(--text-dim)]' },
+  SUSPENDED: { texto: 'suspenso', classe: 'border-[var(--signal-sell-border)] bg-[var(--signal-sell-bg)] text-[var(--signal-sell)]' },
 };
 
 const STATUS_SAQUE: Record<AdminPayout['status'], string> = {
@@ -123,7 +123,7 @@ function PedidoAfiliado({
 }) {
   const quem = afiliado.email ?? afiliado.referralCode;
   return (
-    <Card className="border-amber-500/30 bg-amber-500/[0.04] p-4">
+    <Card className="border-[var(--signal-hold-border)] bg-[var(--signal-hold-bg)] p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold text-[var(--text-primary)]">{quem}</p>
@@ -333,7 +333,7 @@ function LinhaSaque({
   };
   const aberto = saque.status === 'REQUESTED' || saque.status === 'APPROVED';
   return (
-    <Card className={`p-4 ${aberto ? 'border-amber-500/30 bg-amber-500/[0.04]' : 'border-[var(--border-strong)] bg-[var(--fill-1)]'}`}>
+    <Card className={`p-4 ${aberto ? 'border-[var(--signal-hold-border)] bg-[var(--signal-hold-bg)]' : 'border-[var(--border-strong)] bg-[var(--fill-1)]'}`}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold text-[var(--text-primary)]">

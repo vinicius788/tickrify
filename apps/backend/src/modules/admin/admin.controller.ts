@@ -1,4 +1,4 @@
-import { BadRequestException, Body, ConflictException, Controller, Delete, Get, Logger, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, ConflictException, NotFoundException, Controller, Delete, Get, Logger, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { AuthGuard } from '../auth/auth.guard';
 import { AdminGuard } from '../auth/admin.guard';
@@ -10,6 +10,10 @@ import { SetReportStatusDto } from './dto/set-report-status.dto';
 import { PrismaService } from '../database/prisma.service';
 import { buildAcquisitionReport, parseDias } from './acquisition-report';
 import { loadEngineReport } from './engine-report';
+import { loadAnalysisDetail, loadHomeReport, loadUserDetail, searchAnalyses, searchUsers } from './admin-dashboard';
+import { AdminIdParamDto, AdminSearchQueryDto } from './dto/admin-lookup.dto';
+import { AiService } from '../ai/ai.service';
+import { TWELVE_DATA_BUDGET, twelveDataUsage } from '../market/twelve-data';
 import { billingCycleForPriceId } from '../../config/stripe.config';
 import { CampaignSendDto } from './dto/campaign-send.dto';
 import { FounderSendDto } from './dto/founder-send.dto';
@@ -45,6 +49,7 @@ export class AdminController {
     private readonly prisma: PrismaService,
     private readonly mail: MailService,
     private readonly stripe: StripeService,
+    private readonly ai: AiService,
   ) {}
 
   private readonly logger = new Logger(AdminController.name);
@@ -167,7 +172,47 @@ export class AdminController {
     return buildAcquisitionReport(this.prisma, parseDias(dias));
   }
 
-  /** Aba "Motor": desempenho desde a correcao do fuso, por variante e classe, com a decisao ja aplicada. */
+  /** Aba "Inicio": hoje e ultimos 7 dias, mais a cota do Twelve Data (o mesmo medidor do /health). */
+  @Get('home')
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  async inicio() {
+    const [report, twelve] = await Promise.all([loadHomeReport(this.prisma), twelveDataUsage().catch(() => null)]);
+    return { ...report, twelveData: twelve && { ...twelve, dailyLimit: TWELVE_DATA_BUDGET.dailyLimit, perMinute: TWELVE_DATA_BUDGET.perMinute } };
+  }
+
+  /** Inspetor: busca por id da analise, e-mail ou ativo. */
+  @Get('analyses')
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  async buscarAnalises(@Query() query: AdminSearchQueryDto) {
+    return { items: await searchAnalyses(this.prisma, query.q) };
+  }
+
+  /** Inspetor: uma analise inteira, com o print assinado (60 min). Somente leitura. */
+  @Get('analyses/:id')
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  async abrirAnalise(@Param() params: AdminIdParamDto) {
+    const detail = await loadAnalysisDetail(this.prisma, params.id);
+    if (!detail) throw new NotFoundException('Analise nao encontrada');
+    const { imageRef, ...rest } = detail;
+    return { ...rest, imageUrl: await this.ai.signAnalysisImage(imageRef) };
+  }
+
+  /** Aba "Usuario": busca por e-mail (ou id) e ficha de uma pessoa. */
+  @Get('users')
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  async buscarUsuarios(@Query() query: AdminSearchQueryDto) {
+    return { items: await searchUsers(this.prisma, query.q) };
+  }
+
+  @Get('users/:id')
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  async abrirUsuario(@Param() params: AdminIdParamDto) {
+    const detail = await loadUserDetail(this.prisma, params.id);
+    if (!detail) throw new NotFoundException('Usuario nao encontrado');
+    return detail;
+  }
+
+  /** Aba "Motor": motor novo (tres leitores) por tipo de entrada e classe de ativo, com a regra do projeto aplicada. */
   @Get('engine')
   @Throttle({ default: { limit: 30, ttl: 60_000 } })
   async motor() {

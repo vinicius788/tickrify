@@ -2216,6 +2216,12 @@ export class AiService implements OnModuleInit {
     );
   }
 
+  /** URL assinada (60 min) do print de uma analise, para o inspetor do /admin. null = sem imagem ou sem Storage. */
+  async signAnalysisImage(rawUrl: string | null): Promise<string | null> {
+    const [url] = await this.signImagesBatch([rawUrl]);
+    return url ?? null;
+  }
+
   private async getSignedImageUrl(rawUrl: string | null): Promise<string | null> {
     if (!rawUrl) {
       return null;

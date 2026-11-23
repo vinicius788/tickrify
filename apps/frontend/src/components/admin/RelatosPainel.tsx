@@ -16,10 +16,10 @@ const FILTROS: Array<{ chave: ReportStatus | 'todos'; rotulo: string }> = [
 ];
 
 const COR_STATUS: Record<string, string> = {
-  aberto: 'bg-amber-500/15 text-[var(--tone-warn-1)] border-amber-500/30',
-  investigando: 'bg-sky-500/15 text-[var(--tone-info-1)] border-sky-500/30',
-  resolvido: 'bg-emerald-500/15 text-[var(--tone-up-1)] border-emerald-500/30',
-  descartado: 'bg-zinc-500/15 text-[var(--text-dim)] border-zinc-500/30',
+  aberto: 'border-[var(--signal-hold-border)] bg-[var(--signal-hold-bg)] text-[var(--signal-hold)]',
+  investigando: 'border-[var(--border-strong)] bg-[var(--fill-2)] text-[var(--tone-info-1)]',
+  resolvido: 'border-[var(--signal-buy-border)] bg-[var(--signal-buy-bg)] text-[var(--signal-buy)]',
+  descartado: 'border-[var(--border-strong)] bg-[var(--fill-2)] text-[var(--text-dim)]',
 };
 
 function quando(iso: string): string {
