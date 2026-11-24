@@ -17,13 +17,11 @@ vi.mock('@/lib/i18n/LanguageContext', async () => {
   const { getTranslations } = await import('@/lib/i18n');
   return { useLanguage: () => ({ language: 'en', t: getTranslations('en') }) };
 });
-const offer = { current: null as null | { active: boolean; code: string; percentOff: number | null } };
 const founder = { current: null as null | { active: boolean; priceUsd: number; seatsLeft: number | null; expiresAt: number | null }, lastCode: undefined as string | null | undefined };
 vi.mock('@/hooks/useFoundingOffer', async (importOriginal) => {
   const mod = await importOriginal<typeof import('@/hooks/useFoundingOffer')>();
   return {
     ...mod,
-    useFoundingOffer: () => offer.current,
     useLocalPrices: (language: Parameters<typeof mod.localPricesFrom>[1]) => mod.localPricesFrom(null, language),
     useFounderOffer: (code: string | null) => {
       founder.lastCode = code;
@@ -91,8 +89,7 @@ describe('PricingCards: Upgrade -> login -> checkout', () => {
 
     await waitFor(() => expect(location.assigned).toBe('https://checkout.stripe.com/c/pay/cs_1'));
     expect(createCheckoutSession).toHaveBeenCalledTimes(1);
-    // EARLY35 e so do mensal: o anual vai sem cupom.
-    expect(createCheckoutSession).toHaveBeenCalledWith('starter', 'tok', 'yearly', 'usd', undefined, 'pricing', undefined, 'usd');
+    expect(createCheckoutSession).toHaveBeenCalledWith('starter', 'tok', 'yearly', 'usd', 'pricing', undefined, 'usd');
     expect(loadCheckoutIntent()).toBeNull();
   });
 
@@ -108,7 +105,7 @@ describe('PricingCards: Upgrade -> login -> checkout', () => {
     render(<PricingCards />);
 
     await waitFor(() => expect(location.assigned).toBe('https://checkout.stripe.com/c/pay/cs_2'));
-    expect(createCheckoutSession).toHaveBeenCalledWith('starter', 'tok', 'monthly', 'usd', 'EARLY35', 'locked_value', undefined, 'usd');
+    expect(createCheckoutSession).toHaveBeenCalledWith('starter', 'tok', 'monthly', 'usd', 'locked_value', undefined, 'usd');
   });
 
   it('logado sem intencao: nao abre checkout sozinho', async () => {
@@ -136,11 +133,7 @@ describe('PricingCards: Upgrade -> login -> checkout', () => {
     expect(loadCheckoutIntent()).not.toBeNull();
   });
 
-  it.each([
-    ['weekly', undefined],
-    ['monthly', 'EARLY35'],
-    ['yearly', undefined],
-  ] as const)('logado, clique no ciclo %s: cupom %s', async (cycle, coupon) => {
+  it.each(['weekly', 'monthly', 'yearly'] as const)('logado, clique no ciclo %s: checkout sem cupom (desconto so de afiliado, no servidor)', async (cycle) => {
     auth.isSignedIn = true;
     createCheckoutSession.mockResolvedValue({ sessionId: 'cs_c', url: 'https://checkout.stripe.com/c/pay/cs_c' });
     stubLocation('https://tickrify.com/dashboard/plans');
@@ -150,7 +143,7 @@ describe('PricingCards: Upgrade -> login -> checkout', () => {
     await userEvent.click(screen.getByRole('button', { name: /get started|start weekly/i }));
 
     await waitFor(() => expect(createCheckoutSession).toHaveBeenCalledTimes(1));
-    expect(createCheckoutSession).toHaveBeenCalledWith('starter', 'tok', cycle, 'usd', coupon, 'pricing', undefined, 'usd');
+    expect(createCheckoutSession).toHaveBeenCalledWith('starter', 'tok', cycle, 'usd', 'pricing', undefined, 'usd');
   });
 
   it('conta que ja tem assinatura (past_due incluso): avisa e leva para Configuracoes, onde fica o cartao', async () => {
@@ -169,11 +162,8 @@ describe('PricingCards: Upgrade -> login -> checkout', () => {
   });
 });
 
-describe('PricingCards: oferta do 1o mes', () => {
-  afterEach(() => {
-    cleanup();
-    offer.current = null;
-  });
+describe('PricingCards: precos sem oferta de lancamento', () => {
+  afterEach(() => cleanup());
 
   it('anual informa cobranca anual e franquia mensal sem custo unitario do mensal', async () => {
     render(<PricingCards />);
@@ -184,36 +174,10 @@ describe('PricingCards: oferta do 1o mes', () => {
     expect(screen.getByRole('button', { name: /get started.*\$290\/yr/i })).toBeTruthy();
   });
 
-  it('com o EARLY35 ativo, so o mensal mostra o preco do 1o mes', async () => {
-    offer.current = { active: true, code: 'EARLY35', percentOff: 35 };
-    const { container } = render(<PricingCards />);
-    expect(container.querySelector('.site-price-amt s')?.textContent).toBe('Regular price $29');
-    expect(container.querySelector('.site-price-amt b')?.textContent).toBe('$18.85');
-    expect(screen.getByText('first month')).toBeTruthy();
-    expect(screen.getByText('Then $29/month. Cancel anytime in Settings.')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Start for $18.85 first month' })).toBeTruthy();
-    expect(screen.queryByText(/\$18\.85\/mo/)).toBeNull();
-    expect(screen.getByText(/Billed \$18\.85 now for the first month with EARLY35 \(35% off\)/)).toBeTruthy();
-
-    await userEvent.click(screen.getByRole('button', { name: /yearly/i }));
-    expect(container.querySelector('s')).toBeNull();
-    expect(screen.queryByText(/18\.85|35%|first month/)).toBeNull();
-    expect(screen.getByRole('button', { name: /get started.*\$290\/yr/i })).toBeTruthy();
-    await userEvent.click(screen.getByRole('button', { name: /^weekly$/i }));
-    expect(container.querySelector('s')).toBeNull();
-    expect(screen.queryByText(/18\.85|35%|first month/)).toBeNull();
-    expect(screen.getByRole('button', { name: /start weekly.*\$7\.99\/wk/i })).toBeTruthy();
-  });
-
-  it('o preco do 1o mes sai do percentOff da API, nao de um valor fixo', () => {
-    offer.current = { active: true, code: 'EARLY35', percentOff: 50 };
-    render(<PricingCards />);
-    expect(screen.getByRole('button', { name: 'Start for $14.50 first month' })).toBeTruthy();
-  });
-
-  it('sem cupom ativo, $29 sem risco e nenhuma promessa de desconto', () => {
+  it('$29 sem risco e nenhuma promessa de desconto (EARLY35 saiu em 23/11/2026)', () => {
     const { container } = render(<PricingCards />);
     expect(container.querySelector('s')).toBeNull();
+    expect(container.textContent).not.toMatch(/EARLY\d|35\s?%/);
     expect(container.querySelector('.site-price-amt b')?.textContent).toBe('$29');
     expect(screen.queryByText(/Billed .*now for the first month/)).toBeNull();
     expect(screen.getByRole('button', { name: /get started.*\$29\/mo/i })).toBeTruthy();
@@ -272,7 +236,7 @@ describe('PricingCards: oferta Founding Member (link pessoal)', () => {
     expect(screen.getByRole('button', { name: /get started/i })).toBeTruthy();
   });
 
-  it('logado: o clique abre o checkout mensal com o codigo e SEM EARLY35', async () => {
+  it('logado: o clique abre o checkout mensal com o codigo pessoal', async () => {
     auth.isSignedIn = true;
     founder.current = active;
     createCheckoutSession.mockResolvedValue({ sessionId: 'cs_f', url: 'https://checkout.stripe.com/c/pay/cs_f' });
@@ -282,7 +246,7 @@ describe('PricingCards: oferta Founding Member (link pessoal)', () => {
     await userEvent.click(screen.getByRole('button', { name: /claim my founding price/i }));
 
     await waitFor(() => expect(location.assigned).toBe('https://checkout.stripe.com/c/pay/cs_f'));
-    expect(createCheckoutSession).toHaveBeenCalledWith('starter', 'tok', 'monthly', 'usd', undefined, 'pricing', CODE, 'usd');
+    expect(createCheckoutSession).toHaveBeenCalledWith('starter', 'tok', 'monthly', 'usd', 'pricing', CODE, 'usd');
   });
 
   it('deslogado: guarda o codigo na intencao e o login devolve para o checkout com ele', async () => {
@@ -312,7 +276,7 @@ describe('PricingCards: oferta Founding Member (link pessoal)', () => {
 
     await waitFor(() => expect(location.assigned).toBe('https://checkout.stripe.com/c/pay/cs_r'));
     expect(createCheckoutSession).toHaveBeenCalledTimes(1);
-    expect(createCheckoutSession).toHaveBeenCalledWith('starter', 'tok', 'monthly', 'usd', undefined, 'pricing', CODE, 'usd');
+    expect(createCheckoutSession).toHaveBeenCalledWith('starter', 'tok', 'monthly', 'usd', 'pricing', CODE, 'usd');
   });
 
   it('servidor recusa o codigo no checkout: erro na tela e nenhum redirect para o preco cheio', async () => {

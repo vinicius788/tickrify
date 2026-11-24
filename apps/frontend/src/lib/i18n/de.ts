@@ -170,10 +170,6 @@ export default {
     eyebrow: "Preise",
     title: "Ein Tarif. Wähle deinen Abrechnungszyklus.",
     subtitle: "Keine Tarifstufen zum Vergleichen und keine Funktionen hinter einem höheren Preis. Alle Abonnenten nutzen dieselbe Engine, dieselbe Warteschlange und dieselben Modelle.",
-    foundingTitle: "Founding Trader-Angebot",
-    foundingDesc: "Du bist früh dabei, und das zählt. Solange dieses Angebot gilt, wird der Rabatt",
-    foundingCode: "EARLY35",
-    foundingSuffix: "beim Bezahlen des Monatstarifs automatisch angewendet: 35% Rabatt im ersten Monat, danach {monthly}/Monat.",
     trust: [
       "Sichere Zahlungen mit Stripe",
       "Jederzeit in den Einstellungen kündigen",
@@ -255,7 +251,6 @@ export default {
     partnerInvalid: "Dieser Code ist ungültig.",
     canceledTitle: "Zahlung abgebrochen",
     canceledDesc: "Es wurde nichts abgebucht. Du kannst jederzeit ein Abonnement abschließen.",
-    firstMonth: "Jetzt werden {price} für den ersten Monat mit {code} ({pct}% Rabatt) berechnet, automatisch angewendet. Dein Guthaben wird pro Monat auf 200 Ticks zurückgesetzt; ungenutzte Ticks werden nicht übertragen.",
     founderEyebrow: "Gründungsmitglied",
     founderSub: "Festpreis, solange dein Abonnement aktiv bleibt",
     founderFeatures: [
@@ -302,7 +297,6 @@ export default {
     later: "Vielleicht später",
     perMonth: "/Monat",
     modalMonthly: "Monatlich, 200 Ticks",
-    modalMonthlyOffer: "{price} im ersten Monat, danach {monthly}/Monat",
     modalWeekly: "Wöchentlich, 25 Ticks",
     modalCompare: "Alle Tarife vergleichen",
     modalVideoCaption: "Das erhalten Abonnenten: den Einstiegschart und bis zu zwei höhere Zeitrahmen, als ein Markt gelesen. 20 Sekunden.",
@@ -312,10 +306,6 @@ export default {
     waitNudgeWhy: "Warum WAIT? (22-Sekunden-Video)",
     plansTitle: "Tarife",
     plansSub: "Dieselbe Engine in jedem Tarif. Jederzeit kündbar."
-  },
-  foundingBanner: {
-    text: "Angebot für frühe Abonnenten: {pct}% Rabatt im ersten Monat des Monatstarifs mit {code}, beim Bezahlen angewendet. Danach {monthly}/Monat.",
-    cta: "Tarife ansehen"
   },
   productClarity: {
     readingGuide: "Analyse auf einen Blick",
@@ -353,10 +343,6 @@ export default {
     tickCosts: "Quick = 1 Tick · Deep = 3 Ticks",
     weeklyRenewal: "{weekly} jetzt und alle 7 Tage bis zur Kündigung.",
     monthlyRenewal: "{monthly} jetzt und monatlich bis zur Kündigung.",
-    offerRegular: "Regulärer Preis",
-    offerFirstMonth: "im ersten Monat",
-    offerThen: "Danach {monthly}/Monat. Jederzeit in den Einstellungen kündigen.",
-    offerCta: "Für {price} im ersten Monat starten",
     freeEligibility: "Eine Gratis-Demo pro Gerät, ohne Konto. Neue Konten bekommen einen 3-tägigen Gratistest mit 7 Analysen, ohne Karte.",
   },
 

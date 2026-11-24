@@ -170,10 +170,6 @@ export default {
     eyebrow: "Preço",
     title: "Um plano só. Escolha seu ciclo de cobrança.",
     subtitle: "Sem tiers para comparar e sem recurso escondido atrás de um preço maior. Todo assinante roda o mesmo motor, na mesma fila, com os mesmos modelos.",
-    foundingTitle: "Oferta Founding Trader",
-    foundingDesc: "Você chegou cedo, e isso conta. Enquanto a oferta durar, o desconto",
-    foundingCode: "EARLY35",
-    foundingSuffix: "é aplicado automaticamente no checkout do plano mensal: 35% no primeiro mês, depois {monthly}/mês.",
     trust: [
       "Pagamento protegido pela Stripe",
       "Cancele quando quiser em Configurações",
@@ -255,7 +251,6 @@ export default {
     partnerInvalid: "Esse código não é válido.",
     canceledTitle: "Pagamento cancelado",
     canceledDesc: "Nenhuma cobrança foi feita. Você pode assinar quando quiser.",
-    firstMonth: "Cobrado {price} agora pelo primeiro mês com {code} ({pct}% off), aplicado automaticamente. O saldo volta a 200 Ticks por mês; Ticks não utilizados não acumulam.",
     founderEyebrow: "Membro fundador",
     founderSub: "Travado enquanto sua assinatura continuar ativa",
     founderFeatures: [
@@ -302,7 +297,6 @@ export default {
     later: "Continuar depois",
     perMonth: "/mês",
     modalMonthly: "Mensal, 200 Ticks",
-    modalMonthlyOffer: "{price} no primeiro mês, depois {monthly}/mês",
     modalWeekly: "Semanal, 25 Ticks",
     modalCompare: "Comparar todos os planos",
     modalVideoCaption: "O que o assinante recebe: o gráfico de entrada mais até dois tempos maiores, lidos como um mercado só. 20 segundos.",
@@ -312,10 +306,6 @@ export default {
     waitNudgeWhy: "Por que WAIT? (vídeo de 22 s)",
     plansTitle: "Planos",
     plansSub: "O mesmo motor em todos os planos. Cancele quando quiser."
-  },
-  foundingBanner: {
-    text: "Oferta para os primeiros assinantes: {pct}% off no primeiro mês do plano mensal com {code}, aplicado no checkout. Depois {monthly}/mês.",
-    cta: "Ver planos"
   },
   productClarity: {
     readingGuide: "Leitura em resumo",
@@ -353,10 +343,6 @@ export default {
     tickCosts: "Quick = 1 Tick · Deep = 3 Ticks",
     weeklyRenewal: "Cobrança de {weekly} agora e a cada 7 dias até cancelar.",
     monthlyRenewal: "Cobrança de {monthly} agora e mensalmente até cancelar.",
-    offerRegular: "Preço normal",
-    offerFirstMonth: "no primeiro mês",
-    offerThen: "Depois {monthly}/mês. Cancele quando quiser em Configurações.",
-    offerCta: "Começar por {price} no primeiro mês",
     freeEligibility: "Uma demo grátis por dispositivo, sem conta. Conta nova ganha teste grátis de 3 dias com 7 análises, sem cartão.",
   },
 

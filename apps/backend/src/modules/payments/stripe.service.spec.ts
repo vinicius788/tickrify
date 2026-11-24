@@ -788,7 +788,7 @@ describe('StripeService webhooks', () => {
             client_reference_id: 'usr_1',
             amount_total: 2900,
             currency: 'usd',
-            metadata: { priceId: STARTER_MONTHLY, coupon: 'EARLY35', checkoutSource: 'paywall' },
+            metadata: { priceId: STARTER_MONTHLY, coupon: 'aff:aff_1', checkoutSource: 'paywall' },
           },
         },
       });
@@ -797,7 +797,7 @@ describe('StripeService webhooks', () => {
       expect(captureServer).toHaveBeenCalledWith(
         'clerk_1',
         'checkout_session_expired',
-        expect.objectContaining({ sessionId: 'cs_exp2', priceId: STARTER_MONTHLY, coupon: 'EARLY35', source: 'paywall', value: 29, currency: 'USD' }),
+        expect.objectContaining({ sessionId: 'cs_exp2', priceId: STARTER_MONTHLY, coupon: 'aff:aff_1', source: 'paywall', value: 29, currency: 'USD' }),
         { dedupeKey: 'checkout_session_expired:cs_exp2', timestamp: new Date(1790200000 * 1000) },
       );
     });

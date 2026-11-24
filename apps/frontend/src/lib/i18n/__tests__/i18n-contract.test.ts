@@ -9,9 +9,15 @@ function leaves(value: unknown, path = ''): Record<string, string> {
   if (typeof value === 'string') return { [path]: value };
   return Object.assign({}, ...Object.entries(value as object).map(([key, child]) => leaves(child, `${path}.${key}`)));
 }
-const sections = ['pricingPage', 'pricingPlan', 'pricingWeekly', 'pricingChrome', 'dashboardCopy', 'foundingBanner', 'demoUi', 'interfaceExtras', 'sampleUi', 'backendMessages', 'scenarioLabels', 'monitoring', 'alerts'] as const;
+const sections = ['pricingPage', 'pricingPlan', 'pricingWeekly', 'pricingChrome', 'dashboardCopy', 'demoUi', 'interfaceExtras', 'sampleUi', 'backendMessages', 'scenarioLabels', 'monitoring', 'alerts'] as const;
 
 describe('six-language presentation contract', () => {
+  it('vitrine sem a oferta de lancamento (EARLY35 saiu em 23/11/2026) nos 6 idiomas', () => {
+    for (const { code } of LANGUAGES) {
+      expect(JSON.stringify(getTranslations(code)), code).not.toMatch(/EARLY\d|35\s?%/);
+    }
+  });
+
   it('has complete keys and the same interpolation parameters in every language', () => {
     const en = getTranslations('en');
     for (const { code } of LANGUAGES) for (const section of sections) {

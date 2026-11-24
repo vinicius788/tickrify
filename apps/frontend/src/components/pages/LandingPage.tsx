@@ -1,5 +1,4 @@
 import SiteLayout from '@/components/layout/SiteLayout';
-import FoundingTraderBanner from '@/components/landing/FoundingTraderBanner';
 import HeroSection from '@/components/landing/HeroSection';
 import SocialProof from '@/components/landing/SocialProof';
 import HowItWorksSection from '@/components/landing/HowItWorksSection';
@@ -26,7 +25,6 @@ const LandingPage = () => {
 
   return (
     <SiteLayout>
-      <FoundingTraderBanner />
       <HeroSection />
       <SocialProof />
       <HowItWorksSection />

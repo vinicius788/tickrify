@@ -159,7 +159,6 @@ describe('AiService access enforcement', () => {
     const stripeService = {
       ensureTicksForActiveSubscriber: jest.fn().mockResolvedValue(true),
       syncActiveSubscriptionFromStripe: jest.fn().mockResolvedValue(false),
-      getFoundingOffer: jest.fn().mockResolvedValue({ active: true, code: 'EARLY35', percentOff: 35 }),
     };
 
     mailService = {
@@ -1529,10 +1528,7 @@ describe('AiService access enforcement', () => {
       await (service as any).notifyIfFreeQuotaExhausted('usr_1', true);
 
       expect(mailService.sendRecovery).toHaveBeenCalledTimes(1);
-      expect(mailService.sendRecovery).toHaveBeenCalledWith(
-        'trader@example.com',
-        expect.objectContaining({ code: 'EARLY35', active: true }),
-      );
+      expect(mailService.sendRecovery).toHaveBeenCalledWith('trader@example.com');
     });
 
     it('não envia enquanto ainda sobra cota', async () => {

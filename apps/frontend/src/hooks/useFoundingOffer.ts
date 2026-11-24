@@ -3,36 +3,6 @@ import { useQuery } from '@tanstack/react-query';
 import { buildApiUrl } from '@/lib/api';
 import { formatNumber, formatUsd, LOCALES, type Language } from '@/lib/i18n';
 
-export interface FoundingOffer {
-  active: boolean;
-  code: string;
-  percentOff: number | null;
-}
-
-/**
- * Oferta Founding Trader (EARLY35) como a Stripe a ve agora.
- *
- * A faixa da home, a /pricing e o paywall so mostram o desconto quando isto
- * devolve `active`. Enquanto carrega ou se a API falhar, a oferta NAO aparece:
- * esconder um desconto que existe custa pouco; prometer um esgotado e cobrar o
- * preco cheio e o erro que isto evita. O checkout decide no servidor, entao
- * mesmo uma tela velha nunca cobra diferente do que a Stripe aplica.
- */
-export function useFoundingOffer(): FoundingOffer | null {
-  const { data } = useQuery<FoundingOffer | null>({
-    queryKey: ['founding-offer'],
-    queryFn: async () => {
-      const res = await fetch(buildApiUrl('/api/stripe/offer'));
-      if (!res.ok) return null;
-      return (await res.json()) as FoundingOffer;
-    },
-    staleTime: 10 * 60_000,
-    refetchOnWindowFocus: false,
-    retry: 1,
-  });
-  return data?.active ? data : null;
-}
-
 /** Preco de tabela do mensal em USD. JSON-LD, meta e pre-render seguem com ele. */
 export const MONTHLY_PRICE_USD = 29;
 
@@ -140,24 +110,6 @@ export function useLocalPrices(language: Language): LocalPrices {
   });
 
   return useMemo(() => localPricesFrom(data ?? null, language), [data, language]);
-}
-
-/**
- * Preco do 1o mes do mensal com o EARLY35 ativo, ja formatado ("$18.85",
- * "€17.55"), ou null sem oferta. Conta na unidade minima da moeda a partir do
- * `percentOff` da Stripe, nunca fixo: a Stripe arredonda o desconto nela.
- */
-export function firstMonthPrice(offer: FoundingOffer | null, language: Language, local?: LocalPrices): string | null {
-  if (!offer?.percentOff) return null;
-  const currency = local?.currency ?? 'usd';
-  const monthly = local?.amounts.monthly ?? MONTHLY_PRICE_USD;
-  const factor = currency === 'jpy' ? 1 : 100;
-  const minor = Math.round((monthly * factor * (100 - offer.percentOff)) / 100);
-  const value = minor / factor;
-  if (currency === 'usd') {
-    return `$${formatNumber(value, language, { minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: false })}`;
-  }
-  return formatPrice(value, currency, language);
 }
 
 export interface FounderOffer {

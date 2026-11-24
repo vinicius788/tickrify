@@ -58,19 +58,53 @@ describe('MailService', () => {
     expect(body.reply_to).toBe('support@tickrify.com');
   });
 
-  it('recuperacao so cita o cupom quando a oferta vem ativa', async () => {
+  it('recuperacao nao cita cupom nem desconto (EARLY35 saiu em 23/11)', async () => {
     process.env.RESEND_API_KEY = 're_test';
     const fetchMock = jest.fn().mockResolvedValue({ ok: true, text: async () => '' });
     global.fetch = fetchMock as unknown as typeof fetch;
 
-    await new MailService().sendRecovery('ana@example.com', { code: 'EARLY35', percentOff: 35 });
-    await new MailService().sendRecovery('ana@example.com', null);
+    await new MailService().sendRecovery('ana@example.com');
 
-    const [comOferta, semOferta] = fetchMock.mock.calls.map((c) => JSON.parse(c[1].body).html as string);
-    expect(comOferta).toContain('EARLY35');
-    expect(comOferta).toContain('35% off');
-    expect(semOferta).not.toContain('EARLY35');
-    expect(semOferta).not.toMatch(/% off/);
+    const html = JSON.parse(fetchMock.mock.calls[0][1].body).html as string;
+    expect(html).not.toMatch(/EARLY|% off|code/i);
+  });
+
+  it('pedido de afiliado: vai para o suporte com codigo, dados escapados e link do /admin', async () => {
+    process.env.RESEND_API_KEY = 're_test';
+    const fetchMock = jest.fn().mockResolvedValue({ ok: true, text: async () => '' });
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    await new MailService().sendAffiliateApplicationNotify('support@tickrify.com', {
+      name: 'Eigla Rojas',
+      email: 'eigla@mail.cl',
+      code: 'EIGLA10',
+      platform: 'instagram',
+      url: 'https://instagram.com/eigla',
+      audience: '1k_10k',
+      note: '<script>x</script> trader de oro',
+    });
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.to).toBe('support@tickrify.com');
+    expect(body.subject).toContain('EIGLA10');
+    expect(body.html).toContain('Eigla Rojas');
+    expect(body.html).toContain('eigla@mail.cl');
+    expect(body.html).toContain('/admin?aba=afiliados');
+    expect(body.html).not.toContain('<script>');
+  });
+
+  it('boas-vindas do afiliado: remetente do fundador, resposta no suporte, HTML e texto', async () => {
+    process.env.RESEND_API_KEY = 're_test';
+    const fetchMock = jest.fn().mockResolvedValue({ ok: true, text: async () => '' });
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    await new MailService().sendAffiliateWelcome('eigla@mail.cl', { subject: 'S', html: '<p>h</p>', text: 't' });
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.from).toBe('Vinicius from Tickrify <vinicius@tickrify.com>');
+    expect(body.reply_to).toBe('support@tickrify.com');
+    expect(body.text).toBe('t');
+    expect(body.headers).toBeUndefined();
   });
 
   it('boas-vindas: assunto, remetente configurado, reply-to do suporte, icone HTTPS absoluto e versao em texto', async () => {
@@ -121,7 +155,7 @@ describe('MailService', () => {
     const fetchMock = jest.fn().mockResolvedValue({ ok: true, text: async () => '' });
     global.fetch = fetchMock as unknown as typeof fetch;
 
-    await new MailService().sendRecovery('ana@example.com', null);
+    await new MailService().sendRecovery('ana@example.com');
 
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(body.subject).toBe('Your free Tickrify analyses are used up');

@@ -1,11 +1,11 @@
 import { BadRequestException, ConflictException, ForbiddenException, ValidationPipe } from '@nestjs/common';
 import { GUARDS_METADATA } from '@nestjs/common/constants';
 import { Prisma } from '@prisma/client';
-import { AffiliatesService, addMonths, commissionFor } from './affiliates.service';
+import { AffiliatesService, OWNER_NOTIFY_PER_HOUR, addMonths, commissionFor } from './affiliates.service';
 import { AffiliatesAdminController } from './affiliates-admin.controller';
 import { AdminGuard } from '../auth/admin.guard';
 import { AuthGuard } from '../auth/auth.guard';
-import { AdminUpdateAffiliateDto, ClaimAffiliateDto, JoinAffiliateDto, RequestPayoutDto } from './dto/affiliates.dto';
+import { AdminUpdateAffiliateDto, CheckAffiliateCodeDto, ClaimAffiliateDto, JoinAffiliateDto, RequestPayoutDto } from './dto/affiliates.dto';
 import { CreateCheckoutSessionDto } from '../payments/dto/create-checkout-session.dto';
 import { captureServer } from '../../common/analytics/posthog';
 
@@ -33,6 +33,7 @@ function matches(row: Row, where: Row = {}): boolean {
       if ('in' in cond) return cond.in.includes(value);
       if ('not' in cond) return cond.not === null ? value != null : value !== cond.not;
       if ('lte' in cond) return value != null && value <= cond.lte;
+      if ('gte' in cond) return value != null && value >= cond.gte;
       if ('startsWith' in cond) return typeof value === 'string' && value.startsWith(cond.startsWith);
     }
     return value === cond;
@@ -88,6 +89,16 @@ function fakePrisma() {
       Object.assign(row, data, { updatedAt: new Date() });
       return { ...row };
     },
+    delete: async ({ where }: Row) => {
+      const i = db[name].findIndex((r) => matches(r, where));
+      if (i < 0) throw new Error(`${name} not found`);
+      return db[name].splice(i, 1)[0];
+    },
+    deleteMany: async ({ where }: Row = {}) => {
+      const before = db[name].length;
+      db[name] = db[name].filter((r) => !matches(r, where));
+      return { count: before - db[name].length };
+    },
     updateMany: async ({ where, data }: Row) => {
       const rows = db[name].filter((r) => matches(r, where));
       rows.forEach((r) => Object.assign(r, data));
@@ -112,6 +123,10 @@ function fakePrisma() {
 
   const prisma: any = Object.fromEntries(Object.keys(UNIQUE).map((k) => [k, model(k)]));
   prisma.$executeRawUnsafe = jest.fn();
+  // Lingua do perfil: coluna so por SQL em producao; aqui, campo do usuario.
+  prisma.$queryRawUnsafe = jest.fn(async (_sql: string, userId: string) => [
+    { languagePreference: db.user.find((u) => u.id === userId)?.languagePreference ?? null },
+  ]);
   prisma.$transaction = async (fn: (tx: any) => Promise<unknown>) => fn(prisma);
   return { prisma, db };
 }
@@ -127,19 +142,22 @@ const APP = {
   note: 'Canal de price action, 2 lives por semana analisando ouro.',
 };
 const DAY = 24 * 60 * 60 * 1000;
+/** Pedido com o codigo que a pessoa escolheu (nome + 10, como o formulario sugere). */
+const app = (userId: string, over: Row = {}) => ({ ...APP, couponCode: `${userId.toUpperCase().replace(/[^A-Z0-9]/g, '')}10`, ...over });
 
 describe('AffiliatesService', () => {
   let service: AffiliatesService;
   let db: Record<string, Row[]>;
   let prisma: any;
   let stripe: any;
+  let mail: { sendAffiliateApplicationNotify: jest.Mock; sendAffiliateWelcome: jest.Mock };
 
-  const seedUser = (id: string, email: string | null = `${id}@mail.com`) =>
-    db.user.push({ id, email, clerkUserId: `clerk_${id}` });
+  const seedUser = (id: string, email: string | null = `${id}@mail.com`, extra: Row = {}) =>
+    db.user.push({ id, email, clerkUserId: `clerk_${id}`, name: null, ...extra });
 
   /** Pede entrada e o admin aprova (novo afiliado nasce PENDING). */
   const joinApproved = async (userId: string) => {
-    const affiliate = await service.join(userId, APP);
+    const affiliate = await service.join(userId, app(userId));
     await service.adminUpdate(affiliate.id, { status: 'ACTIVE' }, 'admin_1');
     return db.affiliate.find((a) => a.id === affiliate.id)!;
   };
@@ -183,17 +201,34 @@ describe('AffiliatesService', () => {
   };
 
   beforeEach(() => {
-    delete process.env.STRIPE_AFFILIATE_COUPON_ID;
+    // Cupom configurado e o normal: sem ele o admin nem aprova (testes que
+    // precisam da falta apagam a variavel).
+    process.env.STRIPE_AFFILIATE_COUPON_ID = 'AFF10';
+    // Preco semanal: no modo de teste da Stripe vem desta variavel.
+    process.env.STRIPE_TEST_PRICE_WEEKLY = 'price_week';
+    process.env.FRONTEND_URL = 'https://tickrify.com';
     ({ prisma, db } = fakePrisma());
-    service = new AffiliatesService(prisma);
+    const promos = new Map<string, Row>();
+    mail = {
+      sendAffiliateApplicationNotify: jest.fn().mockResolvedValue(true),
+      sendAffiliateWelcome: jest.fn().mockResolvedValue(true),
+    };
+    service = new AffiliatesService(prisma, mail as any);
     stripe = {
       invoices: { retrieve: jest.fn() },
       charges: { retrieve: jest.fn() },
-      coupons: { retrieve: jest.fn() },
+      coupons: { retrieve: jest.fn().mockResolvedValue({ id: 'AFF10', valid: true, duration: 'once', percent_off: 10 }) },
+      prices: { retrieve: jest.fn().mockResolvedValue({ id: 'price_week', currency: 'usd', unit_amount: 799 }) },
+      // Com estado, como a Stripe: o que foi criado pode ser lido e alterado.
       promotionCodes: {
-        create: jest.fn(async (p: Row) => ({ id: `promo_${p.code}`, code: p.code, active: p.active })),
-        retrieve: jest.fn(),
-        update: jest.fn(),
+        create: jest.fn(async (p: Row) => {
+          const promo = { id: `promo_${p.code}`, code: p.code, active: p.active, coupon: { id: p.coupon } };
+          promos.set(promo.id, promo);
+          return { ...promo };
+        }),
+        retrieve: jest.fn(async (id: string) => ({ ...promos.get(id) })),
+        update: jest.fn(async (id: string, data: Row) => Object.assign(promos.get(id) ?? {}, data)),
+        list: jest.fn().mockResolvedValue({ data: [] }),
       },
     };
     (service as any).stripe = stripe;
@@ -320,16 +355,18 @@ describe('AffiliatesService', () => {
     it('checkout: desconto so para indicado que ainda nao pagou, e so com cupom configurado', async () => {
       const aff = await setup();
       await service.claim('buyer', { code: 'SAVE10', kind: 'coupon' }, NOW);
-      await expect(service.checkoutDiscountFor('buyer')).resolves.toBeNull();
-
-      process.env.STRIPE_AFFILIATE_COUPON_ID = 'AFF10';
-      await expect(service.checkoutDiscountFor('buyer')).resolves.toEqual({ affiliateId: aff.id, discount: { coupon: 'AFF10' } });
-
-      db.affiliate[0].stripePromotionCodeId = 'promo_SAVE10';
       await expect(service.checkoutDiscountFor('buyer')).resolves.toEqual({
         affiliateId: aff.id,
         discount: { promotion_code: 'promo_SAVE10' },
       });
+
+      db.affiliate[0].stripePromotionCodeId = null;
+      await expect(service.checkoutDiscountFor('buyer')).resolves.toEqual({ affiliateId: aff.id, discount: { coupon: 'AFF10' } });
+
+      delete process.env.STRIPE_AFFILIATE_COUPON_ID;
+      await expect(service.checkoutDiscountFor('buyer')).resolves.toBeNull();
+      process.env.STRIPE_AFFILIATE_COUPON_ID = 'AFF10';
+      db.affiliate[0].stripePromotionCodeId = 'promo_SAVE10';
 
       await pay();
       await expect(service.checkoutDiscountFor('buyer')).resolves.toBeNull();
@@ -337,7 +374,8 @@ describe('AffiliatesService', () => {
 
     it('afiliado aprovado ANTES do cupom existir ganha o codigo na Stripe no boot, uma vez so', async () => {
       seedUser('partner');
-      const aff = await service.join('partner', APP);
+      delete process.env.STRIPE_AFFILIATE_COUPON_ID;
+      const aff = await service.join('partner', app('partner'));
       db.affiliate[0].status = 'ACTIVE';
       // Sem cupom configurado: nada acontece.
       await expect(service.syncMissingPromotionCodes()).resolves.toBe(0);
@@ -355,21 +393,23 @@ describe('AffiliatesService', () => {
       expect(stripe.promotionCodes.create).toHaveBeenCalledTimes(1);
     });
 
-    it('com cupom configurado, entrar no programa cria o promotion code (1o pagamento, metadata do afiliado)', async () => {
-      process.env.STRIPE_AFFILIATE_COUPON_ID = 'AFF10';
+    it('pedido PENDING nao reserva nada na Stripe; o codigo nasce ativo na aprovacao', async () => {
       seedUser('partner');
-      const aff = await service.join('partner', APP);
+      const aff = await service.join('partner', app('partner'));
+      expect(stripe.promotionCodes.create).not.toHaveBeenCalled();
+      await expect(service.syncMissingPromotionCodes()).resolves.toBe(0);
+
+      await service.adminUpdate(aff.id, { status: 'ACTIVE' }, 'admin_1');
       expect(stripe.promotionCodes.create).toHaveBeenCalledWith(
         expect.objectContaining({
           coupon: 'AFF10',
-          code: aff.couponCode,
+          code: 'PARTNER10',
+          active: true,
           metadata: { affiliateId: aff.id },
           restrictions: { first_time_transaction: true },
-          // Nasce PENDING: o codigo so vale depois da aprovacao.
-          active: false,
         }),
       );
-      expect(db.affiliate[0].stripePromotionCodeId).toBe(`promo_${aff.couponCode}`);
+      expect(db.affiliate[0]).toMatchObject({ status: 'ACTIVE', stripePromotionCodeId: 'promo_PARTNER10' });
     });
   });
 
@@ -705,7 +745,7 @@ describe('AffiliatesService', () => {
 
     it('o pedido guarda canal, link, audiencia e plano, e o admin ve tudo', async () => {
       seedUser('partner');
-      await service.join('partner', APP);
+      await service.join('partner', app('partner'));
       expect(db.affiliate[0]).toMatchObject({
         status: 'PENDING',
         applicationPlatform: 'youtube',
@@ -728,8 +768,8 @@ describe('AffiliatesService', () => {
 
     it('entrar duas vezes devolve o mesmo perfil', async () => {
       seedUser('partner');
-      const a = await service.join('partner', APP);
-      const b = await service.join('partner', APP);
+      const a = await service.join('partner', app('partner'));
+      const b = await service.join('partner', app('partner'));
       expect(a.id).toBe(b.id);
       expect(db.affiliate).toHaveLength(1);
     });
@@ -744,7 +784,7 @@ describe('AffiliatesService', () => {
     const pendingPartner = async () => {
       seedUser('partner');
       seedUser('buyer');
-      const aff = await service.join('partner', APP);
+      const aff = await service.join('partner', app('partner'));
       db.affiliate[0].referralCode = 'PARTNER1';
       db.affiliate[0].couponCode = 'SAVE10';
       return aff;
@@ -811,31 +851,268 @@ describe('AffiliatesService', () => {
       await expect(service.adminUpdate(aff.id, { status: 'REJECTED' }, 'admin_1')).rejects.toBeInstanceOf(ConflictException);
     });
 
-    it('aprovar ativa o promotion code na Stripe (nasce inativo)', async () => {
-      process.env.STRIPE_AFFILIATE_COUPON_ID = 'AFF10';
+    it('pedido antigo com promotion code inativo do mesmo codigo e cupom: aprovar so reativa', async () => {
       seedUser('partner');
-      const aff = await service.join('partner', APP);
-      stripe.promotionCodes.retrieve.mockResolvedValue({ id: db.affiliate[0].stripePromotionCodeId, code: aff.couponCode, active: false });
+      const aff = await service.join('partner', app('partner'));
+      db.affiliate[0].stripePromotionCodeId = 'promo_old';
+      stripe.promotionCodes.retrieve.mockResolvedValue({ id: 'promo_old', code: aff.couponCode, active: false, coupon: { id: 'AFF10' } });
       await service.adminUpdate(aff.id, { status: 'ACTIVE' }, 'admin_1');
-      expect(stripe.promotionCodes.update).toHaveBeenCalledWith(db.affiliate[0].stripePromotionCodeId, { active: true });
+      expect(stripe.promotionCodes.update).toHaveBeenCalledWith('promo_old', { active: true });
+      expect(stripe.promotionCodes.create).not.toHaveBeenCalled();
+      expect(db.affiliate[0]).toMatchObject({ status: 'ACTIVE', stripePromotionCodeId: 'promo_old' });
     });
   });
 
-  describe('EARLY35', () => {
-    it('cliente indicado que pagou com EARLY35: continua atribuido e a comissao sai sobre o valor pago', async () => {
-      await setup();
-      await service.claim('buyer', { code: 'SAVE10', kind: 'coupon' }, NOW);
-      // Fatura com o cupom EARLY35 (sem promotion code de afiliado): US$ 29 x 0,65.
-      await pay({ amount_paid: 1885, discounts: [{ id: 'di_early', coupon: { id: 'EARLY35' }, promotion_code: null }] });
-      expect(db.affiliateReferral[0]).toMatchObject({ source: 'coupon', firstPaidAt: NOW });
-      expect(db.affiliateCommission[0]).toMatchObject({ amountPaidCents: 1885, commissionCents: 377 });
+  describe('pedido com codigo escolhido (23/11/2026)', () => {
+    it('codigo valido: gravado em maiusculas no cupom e no link, pedido PENDING', async () => {
+      seedUser('eigla');
+      await service.join('eigla', app('eigla', { couponCode: 'eigla10' }));
+      expect(db.affiliate[0]).toMatchObject({ status: 'PENDING', couponCode: 'EIGLA10', referralCode: 'EIGLA10' });
     });
 
-    it('depois do EARLY35 ainda ha desconto de afiliado para o indicado que nao pagou', async () => {
-      process.env.STRIPE_AFFILIATE_COUPON_ID = 'AFF10';
-      const aff = await setup();
-      await service.claim('buyer', { code: 'SAVE10', kind: 'coupon' }, NOW);
-      await expect(service.checkoutDiscountFor('buyer')).resolves.toMatchObject({ affiliateId: aff.id });
+    it('codigo invalido e recusado', async () => {
+      seedUser('eigla');
+      await expect(service.join('eigla', app('eigla', { couponCode: 'EI' }))).rejects.toBeInstanceOf(BadRequestException);
+      await expect(service.checkCode('EIGLA-10')).resolves.toEqual({ available: false, reason: 'invalid' });
+      expect(db.affiliate).toHaveLength(0);
+    });
+
+    it('codigo duplicado (outro afiliado ou promotion code ativo na Stripe) e recusado', async () => {
+      seedUser('eigla');
+      seedUser('rival');
+      await service.join('eigla', app('eigla', { couponCode: 'EIGLA10' }));
+      await expect(service.checkCode('eigla10')).resolves.toEqual({ available: false, reason: 'taken' });
+      await expect(service.join('rival', app('rival', { couponCode: 'EIGLA10' }))).rejects.toBeInstanceOf(ConflictException);
+
+      stripe.promotionCodes.list.mockResolvedValueOnce({ data: [{ id: 'promo_camp', code: 'EARLY50', active: true }] });
+      await expect(service.checkCode('early50')).resolves.toEqual({ available: false, reason: 'taken' });
+      await expect(service.checkCode('RIVAL10')).resolves.toEqual({ available: true });
+    });
+
+    it('Stripe fora do ar na checagem nao trava o formulario (a aprovacao confere de novo)', async () => {
+      stripe.promotionCodes.list.mockRejectedValueOnce(new Error('down'));
+      await expect(service.checkCode('EIGLA10')).resolves.toEqual({ available: true });
+    });
+
+    it('pedido novo gera aviso ao dono com nome, e-mail, codigo e o que a pessoa contou', async () => {
+      seedUser('eigla', 'eigla@mail.cl', { name: 'Eigla Rojas' });
+      await service.join('eigla', app('eigla', { couponCode: 'EIGLA10' }));
+      expect(mail.sendAffiliateApplicationNotify).toHaveBeenCalledWith('support@tickrify.com', {
+        name: 'Eigla Rojas',
+        email: 'eigla@mail.cl',
+        code: 'EIGLA10',
+        platform: 'youtube',
+        url: 'https://youtube.com/@tradercanal',
+        audience: '10k_50k',
+        note: APP.note,
+      });
+      expect(db.adminAudit.filter((a) => a.action === 'affiliate_application_notify')).toHaveLength(1);
+    });
+
+    it(`aviso tem teto de ${OWNER_NOTIFY_PER_HOUR} por hora, e envio recusado devolve a vaga`, async () => {
+      for (let i = 0; i < OWNER_NOTIFY_PER_HOUR; i++) {
+        db.adminAudit.push({ id: `n${i}`, action: 'affiliate_application_notify', createdAt: new Date() });
+      }
+      seedUser('eigla');
+      await service.join('eigla', app('eigla'));
+      expect(mail.sendAffiliateApplicationNotify).not.toHaveBeenCalled();
+      expect(db.affiliate).toHaveLength(1);
+
+      db.adminAudit = [];
+      prisma.adminAudit = (fakePrisma().prisma as any).adminAudit;
+      ({ prisma, db } = fakePrisma());
+      service = new AffiliatesService(prisma, mail as any);
+      (service as any).stripe = stripe;
+      mail.sendAffiliateApplicationNotify.mockResolvedValueOnce(false);
+      seedUser('maria');
+      await service.join('maria', app('maria'));
+      expect(mail.sendAffiliateApplicationNotify).toHaveBeenCalledTimes(1);
+      expect(db.adminAudit.filter((a) => a.action === 'affiliate_application_notify')).toHaveLength(0);
+    });
+  });
+
+  describe('aprovacao com a Stripe (23/11/2026)', () => {
+    const pending = async (code = 'EIGLA10', extra: Row = {}) => {
+      seedUser('eigla', 'eigla@mail.cl', { name: 'Eigla Rojas', ...extra });
+      return service.join('eigla', app('eigla', { couponCode: code }));
+    };
+
+    it('aprovar cria o promotion code e libera o painel com codigo e link', async () => {
+      const aff = await pending();
+      await service.adminUpdate(aff.id, { status: 'ACTIVE' }, 'admin_1');
+      expect(stripe.promotionCodes.create).toHaveBeenCalledWith(expect.objectContaining({ code: 'EIGLA10', coupon: 'AFF10', active: true }));
+      const dash = await service.getDashboard('eigla', NOW);
+      expect(dash.affiliate).toMatchObject({ status: 'ACTIVE', couponCode: 'EIGLA10', referralCode: 'EIGLA10' });
+    });
+
+    it('o dono edita o codigo antes de aprovar: vale o editado, no cupom e no link', async () => {
+      const aff = await pending();
+      await service.adminUpdate(aff.id, { status: 'ACTIVE', couponCode: 'eigla15', referralCode: 'eigla15' }, 'admin_1');
+      expect(stripe.promotionCodes.create).toHaveBeenCalledWith(expect.objectContaining({ code: 'EIGLA15' }));
+      expect(db.affiliate[0]).toMatchObject({ status: 'ACTIVE', couponCode: 'EIGLA15', referralCode: 'EIGLA15' });
+    });
+
+    it('Stripe recusando: o afiliado NAO vira ACTIVE, o erro traz o motivo e nada de boas-vindas', async () => {
+      const aff = await pending();
+      stripe.promotionCodes.create.mockRejectedValueOnce(new Error('Coupon AFF10 is expired'));
+      await expect(service.adminUpdate(aff.id, { status: 'ACTIVE' }, 'admin_1')).rejects.toMatchObject({
+        response: { code: 'affiliate_stripe_refused', message: expect.stringContaining('Coupon AFF10 is expired') },
+      });
+      expect(db.affiliate[0]).toMatchObject({ status: 'PENDING', stripePromotionCodeId: null });
+      expect(mail.sendAffiliateWelcome).not.toHaveBeenCalled();
+      expect(db.adminAudit.some((a) => a.action === 'affiliate_stripe_refused')).toBe(true);
+    });
+
+    it('codigo ja ativo na Stripe (ex.: cupom de campanha): recusa a aprovacao', async () => {
+      const aff = await pending('EARLY50');
+      stripe.promotionCodes.list.mockResolvedValueOnce({ data: [{ id: 'promo_camp', code: 'EARLY50', active: true }] });
+      await expect(service.adminUpdate(aff.id, { status: 'ACTIVE' }, 'admin_1')).rejects.toBeInstanceOf(ConflictException);
+      expect(db.affiliate[0].status).toBe('PENDING');
+      expect(stripe.promotionCodes.create).not.toHaveBeenCalled();
+    });
+
+    it('sem STRIPE_AFFILIATE_COUPON_ID: aprovar explica que falta o cupom e nada muda', async () => {
+      const aff = await pending();
+      delete process.env.STRIPE_AFFILIATE_COUPON_ID;
+      await expect(service.adminUpdate(aff.id, { status: 'ACTIVE' }, 'admin_1')).rejects.toMatchObject({
+        response: { code: 'affiliate_coupon_missing', message: expect.stringContaining('STRIPE_AFFILIATE_COUPON_ID') },
+      });
+      expect(db.affiliate[0].status).toBe('PENDING');
+    });
+
+    it('recusar continua como antes (REJECTED) e nao manda boas-vindas', async () => {
+      const aff = await pending();
+      await service.adminUpdate(aff.id, { status: 'REJECTED' }, 'admin_1');
+      expect(db.affiliate[0].status).toBe('REJECTED');
+      expect(stripe.promotionCodes.create).not.toHaveBeenCalled();
+      expect(mail.sendAffiliateWelcome).not.toHaveBeenCalled();
+      await expect(service.sendWelcomeOnce(aff.id)).resolves.toBe(false);
+    });
+
+    it('trocar o codigo de um ACTIVE: cria o novo, desativa o antigo e as vendas antigas seguem dele', async () => {
+      const aff = await pending();
+      seedUser('buyer');
+      await service.adminUpdate(aff.id, { status: 'ACTIVE' }, 'admin_1');
+      await service.claim('buyer', { code: 'EIGLA10', kind: 'coupon' }, NOW);
+
+      await service.adminUpdate(aff.id, { couponCode: 'ROJAS10' }, 'admin_1');
+      expect(stripe.promotionCodes.create).toHaveBeenLastCalledWith(expect.objectContaining({ code: 'ROJAS10', active: true }));
+      expect(stripe.promotionCodes.update).toHaveBeenCalledWith('promo_EIGLA10', { active: false });
+      expect(db.affiliate[0]).toMatchObject({ couponCode: 'ROJAS10', stripePromotionCodeId: 'promo_ROJAS10' });
+      expect(db.affiliateReferral[0]).toMatchObject({ affiliateId: aff.id, userId: 'buyer' });
+      await pay();
+      expect(db.affiliateCommission[0]).toMatchObject({ affiliateId: aff.id });
+    });
+
+    it('troca de codigo que a Stripe recusa nao muda nada', async () => {
+      const aff = await pending();
+      await service.adminUpdate(aff.id, { status: 'ACTIVE' }, 'admin_1');
+      stripe.promotionCodes.create.mockRejectedValueOnce(new Error('rate limited'));
+      await expect(service.adminUpdate(aff.id, { couponCode: 'ROJAS10' }, 'admin_1')).rejects.toBeInstanceOf(BadRequestException);
+      expect(db.affiliate[0]).toMatchObject({ couponCode: 'EIGLA10', stripePromotionCodeId: 'promo_EIGLA10' });
+      expect(stripe.promotionCodes.update).not.toHaveBeenCalledWith('promo_EIGLA10', { active: false });
+    });
+  });
+
+  describe('e-mail de boas-vindas (23/11/2026)', () => {
+    const approve = async (extra: Row = {}) => {
+      seedUser('eigla', 'eigla@mail.cl', { name: 'Eigla Rojas', ...extra });
+      const aff = await service.join('eigla', app('eigla', { couponCode: 'EIGLA10' }));
+      await service.adminUpdate(aff.id, { status: 'ACTIVE' }, 'admin_1');
+      return aff;
+    };
+    const sentEmail = () => mail.sendAffiliateWelcome.mock.calls[0];
+
+    it('sai uma vez so, para o e-mail da conta, com os valores da configuracao e do afiliado', async () => {
+      const aff = await approve();
+      expect(mail.sendAffiliateWelcome).toHaveBeenCalledTimes(1);
+      const [to, email] = sentEmail();
+      expect(to).toBe('eigla@mail.cl');
+      expect(email.subject).toBe("You're now a Tickrify partner");
+      for (const part of [
+        'Hi Eigla,',
+        'Your coupon code: EIGLA10',
+        'Your link: https://tickrify.com/?ref=EIGLA10',
+        '10% off their first payment',
+        '20% of every payment from the people you bring, for 12 months',
+        'confirmed 30 days after each payment and can be withdrawn from 50 USD',
+        'partner dashboard: https://tickrify.com/affiliate',
+        'Mention the weekly plan ($7.99)',
+        'Vinícius\nFounder, Tickrify',
+      ]) {
+        expect(email.text).toContain(part);
+      }
+      expect(email.html).toContain('EIGLA10');
+      expect(email.html).toContain('href="https://tickrify.com/?ref=EIGLA10"');
+      expect(email.text + email.html + email.subject).not.toMatch(/\u2014/);
+
+      await expect(service.sendWelcomeOnce(aff.id)).resolves.toBe(false);
+      await service.getDashboard('eigla', NOW);
+      expect(mail.sendAffiliateWelcome).toHaveBeenCalledTimes(1);
+    });
+
+    it('valores mudam com a configuracao: taxa especial e cupom de 15%', async () => {
+      stripe.coupons.retrieve.mockResolvedValue({ id: 'AFF10', valid: true, duration: 'once', percent_off: 15 });
+      seedUser('eigla', 'eigla@mail.cl');
+      const aff = await service.join('eigla', app('eigla'));
+      await service.adminUpdate(aff.id, { commissionRateBps: 3000 }, 'admin_1');
+      await service.adminUpdate(aff.id, { status: 'ACTIVE' }, 'admin_1');
+      const [, email] = sentEmail();
+      expect(email.text).toContain('15% off their first payment');
+      expect(email.text).toContain('What you get: 30% of every payment');
+      expect(email.text).toContain('Hi,');
+    });
+
+    it('no idioma do perfil (espanhol para o Chile), com o preco no formato local', async () => {
+      await approve({ languagePreference: 'es' });
+      const [, email] = sentEmail();
+      expect(email.subject).toBe('Ya eres partner de Tickrify');
+      expect(email.text).toContain('Hola, Eigla:');
+      expect(email.text).toContain('Tu código de cupón: EIGLA10');
+      expect(email.text).toContain('10% de descuento en su primer pago');
+      expect(email.text).toContain('20% de cada pago');
+      expect(email.text).toContain('durante 12 meses');
+      expect(email.text).toContain('30 días después');
+      expect(email.text).toContain('a partir de 50 USD');
+      expect(email.text).toMatch(/7,99/);
+    });
+
+    it('sem idioma ou com idioma fora dos 6 do site: ingles', async () => {
+      await approve({ languagePreference: 'it' });
+      expect(sentEmail()[1].subject).toBe("You're now a Tickrify partner");
+    });
+
+    it.each(['pt', 'fr', 'de', 'ja'])('%s tem traducao propria, sem travessao', async (lang) => {
+      await approve({ languagePreference: lang });
+      const [, email] = sentEmail();
+      expect(email.subject).not.toBe("You're now a Tickrify partner");
+      expect(email.text).toContain('EIGLA10');
+      expect(email.text + email.subject).not.toMatch(/\u2014/);
+    });
+
+    it('Resend recusa: tira a marca e o painel do afiliado tenta de novo na visita', async () => {
+      mail.sendAffiliateWelcome.mockResolvedValueOnce(false);
+      await approve();
+      expect(db.adminAudit.some((a) => a.action === 'affiliate_welcome_sent')).toBe(false);
+      expect(db.adminAudit.some((a) => a.action === 'affiliate_welcome_retry')).toBe(true);
+
+      await service.getDashboard('eigla', NOW);
+      expect(mail.sendAffiliateWelcome).toHaveBeenCalledTimes(2);
+      expect(db.adminAudit.filter((a) => a.action === 'affiliate_welcome_sent')).toHaveLength(1);
+      expect(db.adminAudit.some((a) => a.action === 'affiliate_welcome_retry')).toBe(false);
+
+      await service.getDashboard('eigla', NOW);
+      expect(mail.sendAffiliateWelcome).toHaveBeenCalledTimes(2);
+    });
+
+    it('afiliado ativo antigo (sem marca de nova tentativa) nao recebe boas-vindas atrasadas', async () => {
+      seedUser('old');
+      db.affiliate.push({
+        id: 'aff_old', userId: 'old', referralCode: 'X7K2M9QA', couponCode: 'X7K2M9QA', commissionRateBps: 2000,
+        status: 'ACTIVE', stripePromotionCodeId: 'promo_old', createdAt: NOW, updatedAt: NOW,
+      });
+      await service.getDashboard('old', NOW);
+      expect(mail.sendAffiliateWelcome).not.toHaveBeenCalled();
     });
   });
 
@@ -875,16 +1152,24 @@ describe('DTOs de afiliado contra o ValidationPipe real', () => {
     await expect(run(ClaimAffiliateDto, { code: 'a b;', kind: 'link' })).rejects.toBeDefined();
   });
 
-  it('pedido de entrada: nada obrigatorio, mas o que vier preenchido e validado', async () => {
+  it('pedido de entrada: so o codigo e obrigatorio; o que vier preenchido e validado', async () => {
     const ok = {
+      couponCode: 'Eigla10',
       platform: 'instagram',
       url: 'https://instagram.com/trader',
       audience: '1k_10k',
       note: 'Posto analises diarias de cripto nos stories.',
     };
     await expect(run(JoinAffiliateDto, ok)).resolves.toBeDefined();
-    await expect(run(JoinAffiliateDto, {})).resolves.toBeDefined();
-    await expect(run(JoinAffiliateDto, { note: 'quero' })).resolves.toBeDefined();
+    await expect(run(JoinAffiliateDto, { couponCode: 'EIGLA10' })).resolves.toBeDefined();
+    await expect(run(JoinAffiliateDto, { couponCode: 'EIGLA10', note: 'quero' })).resolves.toBeDefined();
+    await expect(run(JoinAffiliateDto, {})).rejects.toBeDefined();
+    await expect(run(JoinAffiliateDto, { couponCode: 'EIG' })).rejects.toBeDefined();
+    await expect(run(JoinAffiliateDto, { couponCode: 'E'.repeat(21) })).rejects.toBeDefined();
+    await expect(run(JoinAffiliateDto, { couponCode: 'EIGLA-10' })).rejects.toBeDefined();
+    await expect(run(JoinAffiliateDto, { couponCode: 'ÉIGLA10' })).rejects.toBeDefined();
+    await expect(run(CheckAffiliateCodeDto, { code: 'EIGLA10' })).resolves.toBeDefined();
+    await expect(run(CheckAffiliateCodeDto, { code: 'EIGLA10', extra: 1 })).rejects.toBeDefined();
     await expect(run(JoinAffiliateDto, { ...ok, url: 'http://instagram.com/trader' })).rejects.toBeDefined();
     await expect(run(JoinAffiliateDto, { ...ok, url: 'javascript:alert(1)' })).rejects.toBeDefined();
     await expect(run(JoinAffiliateDto, { ...ok, note: 'x'.repeat(501) })).rejects.toBeDefined();

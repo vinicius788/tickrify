@@ -162,6 +162,53 @@ export class MailService {
     );
   }
 
+  /**
+   * Pedido novo de afiliado (23/11/2026): vai para o suporte com o que a pessoa
+   * contou e o link para aprovar no /admin. Texto do usuario sempre escapado.
+   * O teto por hora mora no AffiliatesService.
+   */
+  async sendAffiliateApplicationNotify(
+    to: string,
+    info: { name: string | null; email: string | null; code: string; platform: string | null; url: string | null; audience: string | null; note: string | null },
+  ): Promise<boolean> {
+    const escape = (value: string) =>
+      value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    const linha = (rotulo: string, valor: string | null) =>
+      `<p style="margin:0 0 4px;"><span style="color:#5b6b7a;">${rotulo}:</span> ${valor ? escape(valor) : 'não informado'}</p>`;
+    return this.send(
+      to,
+      `[Tickrify] Pedido de afiliado: ${info.code}`,
+      `<!doctype html><html><body style="font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;font-size:15px;line-height:1.6;color:#16202a;">
+  <div style="max-width:560px;margin:0 auto;padding:24px;">
+    <div style="font-size:13px;color:#5b6b7a;margin-bottom:8px;">Tickrify · pedido de afiliado</div>
+    ${linha('Nome', info.name)}
+    ${linha('E-mail', info.email)}
+    ${linha('Código pedido', info.code)}
+    ${linha('Canal', info.platform)}
+    ${linha('Link', info.url)}
+    ${linha('Audiência', info.audience)}
+    ${info.note ? `<div style="white-space:pre-wrap;border-left:3px solid #d0d7de;padding-left:12px;margin:12px 0;">${escape(info.note)}</div>` : ''}
+    <a href="${this.appUrl}/admin?aba=afiliados" style="display:inline-block;margin-top:8px;font-size:14px;">Aprovar ou recusar no /admin</a>
+  </div>
+</body></html>`,
+      { kind: 'affiliate_application_notify' },
+    );
+  }
+
+  /**
+   * Boas-vindas do afiliado aprovado. Sai em nome do fundador (mesmo remetente
+   * dos e-mails de ciclo de vida, sem acento no cabecalho, ver sendLifecycle) e
+   * a resposta cai no suporte. Transacional: sem descadastro.
+   */
+  async sendAffiliateWelcome(to: string, email: { subject: string; html: string; text: string }): Promise<boolean> {
+    return this.send(to, email.subject, email.html, {
+      kind: 'affiliate_welcome',
+      from: process.env.LIFECYCLE_MAIL_FROM || 'Vinicius from Tickrify <vinicius@tickrify.com>',
+      replyTo: 'support@tickrify.com',
+      text: email.text,
+    });
+  }
+
   /** Boas-vindas: disparado uma unica vez, quando a conta nova e criada. `firstName` e opcional. */
   async sendWelcome(to: string, firstName?: string | null): Promise<void> {
     // Conta nova com TRIAL_MODE ligado entra no trial de 3 dias: o texto acompanha.
@@ -175,25 +222,17 @@ export class MailService {
   /**
    * Recuperação: a cota grátis acabou e a pessoa não assinou.
    *
-   * `offer`: o cupom so entra no texto se ainda estiver ativo na Stripe.
-   * Prometer desconto esgotado e cobrar cheio e exatamente o que isto evita.
-   *
-   * Texto de 29/09 (aprovado pelo dono): o anterior presumia uso ("Looks like
-   * the AI's been helping you confirm entries") e so oferecia o mensal. Agora
-   * so afirma o que e verdade para todos e mostra o semanal primeiro, porque o
-   * publico e quase todo de pais onde US$ 29 de uma vez nao fecha.
+   * Texto de 29/09 (aprovado pelo dono): so afirma o que e verdade para todos
+   * e mostra o semanal primeiro, porque o publico e quase todo de pais onde
+   * US$ 29 de uma vez nao fecha. Sem cupom desde 23/11/2026 (EARLY35 saiu).
    */
-  async sendRecovery(to: string, offer?: { code: string; percentOff: number | null } | null): Promise<boolean> {
-    const oferta =
-      offer && offer.percentOff
-        ? `, or use code <b>${offer.code}</b> for ${offer.percentOff}% off the first month`
-        : '';
+  async sendRecovery(to: string): Promise<boolean> {
     const subject = 'Your free Tickrify analyses are used up';
     const html = this.wrap(
       subject,
       `To keep getting buy or sell plans, entries to wait for and the reasons to wait on your charts, pick a plan:<br><br>` +
         `<b>One week:</b> $7.99 for 25 analyses.<br>` +
-        `<b>Monthly:</b> $29 for 200 analyses${oferta}.<br><br>` +
+        `<b>Monthly:</b> $29 for 200 analyses.<br><br>` +
         `Both renew automatically and you can cancel anytime.`,
       'See plans',
       `${this.appUrl}/pricing`,

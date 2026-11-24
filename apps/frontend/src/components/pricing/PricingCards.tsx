@@ -6,7 +6,7 @@ import { buildApiUrl, warmupPaymentsApi } from "../../lib/api";
 import { getReferralCoupon, isAffiliateCode, saveReferralCoupon } from "../../lib/attribution";
 import { track } from "../../lib/analytics";
 import { useToast } from "../../hooks/use-toast";
-import { firstMonthPrice, useFounderOffer, useFoundingOffer, useLocalPrices } from "@/hooks/useFoundingOffer";
+import { useFounderOffer, useLocalPrices } from "@/hooks/useFoundingOffer";
 import { interpolate, LOCALES, formatNumber, type Language, type Translations } from "@/lib/i18n";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import {
@@ -30,9 +30,9 @@ const Check = () => (
 
 /**
  * Cupom de parceiro digitado no site. So identifica o afiliado: o servidor
- * valida o codigo aqui e de novo no checkout, e decide sozinho o desconto (o
- * EARLY35 ganha enquanto existir, porque e maior). Fica guardado e vai junto
- * no pedido de checkout, inclusive depois do login.
+ * valida o codigo aqui e de novo no checkout, e decide sozinho o desconto do
+ * afiliado. Fica guardado e vai junto no pedido de checkout, inclusive depois
+ * do login.
  */
 function PartnerCode({ copy }: { copy: Translations["pricingChrome"] }) {
   const [applied, setApplied] = useState<string | null>(() => getReferralCoupon());
@@ -131,12 +131,7 @@ export function PricingCards() {
   const copy = t.pricingChrome;
   const planCopy = t.pricingPlan;
   const weeklyCopy = t.pricingWeekly;
-  // O checkout do mensal ja leva o EARLY35; sem esta linha o card dizia so
-  // "$29" e o paywall do painel, "$18.85 no 1o mes" (05/10/2026). Some junto
-  // com o cupom e nunca aparece no semanal nem no anual (o servidor descarta).
-  const foundingOffer = useFoundingOffer();
   const local = useLocalPrices(language);
-  const offerPrice = firstMonthPrice(foundingOffer, language, local);
   // Oferta Founding Member: so existe com um link pessoal valido. Sem codigo, ou
   // com codigo usado ou vencido, a pagina fica exatamente como sempre foi.
   const [offerCode] = useState<string | null>(() => offerFromUrl());
@@ -245,33 +240,15 @@ export function PricingCards() {
           return;
         }
 
-        /* EARLY35 pre-aplicado, igual ao paywall do painel.
-         *
-         * ⚠️ ISTO CUSTOU UMA VENDA, e o Stripe tem o recibo: em 12/09/2026 um
-         * cliente japones foi cobrado US$ 29,00 e nao concluiu, enquanto os
-         * tres assinantes que converteram pelo PAYWALL pagaram US$ 18,85
-         * (29 x 0,65). A diferenca nao era moeda nem pais: o paywall mandava
-         * o cupom e esta pagina nao, entao quem vinha por aqui tinha que
-         * DIGITAR "EARLY35" no checkout da Stripe para receber o desconto que
-         * a propria pagina anuncia. Quem nao digitava pagava 54% a mais.
-         *
-         * A copy da /pricing foi ajustada junto: ela nao pede mais o codigo,
-         * porque agora nao ha codigo para pedir.
-         *
-         * SO no mensal (05/10/2026): o cupom e "35% no primeiro MES". Ate entao
-         * o anual tambem ia com ele (US$ 290 virava US$ 188,50). O servidor
-         * descarta igual; mandar so aqui evita sessao marcada com cupom. */
-        const coupon = cycle === "monthly" && !offer ? "EARLY35" : undefined;
         // Founding Member promete US$ 15: segue em USD (o servidor tambem forca).
         const chargeCurrency = offer ? "usd" : local.currency;
-        const { url, sessionId } = await createCheckoutSession(planType, token, cycle, currency, coupon, source, offer, chargeCurrency);
+        const { url, sessionId } = await createCheckoutSession(planType, token, cycle, currency, source, offer, chargeCurrency);
         // Dispara SO com a URL da Stripe em maos: antes saia antes da chamada a
         // API e contava clique como checkout, inclusive quando a sessao falhava.
         track('checkout_started', {
           plan: planType,
           billingCycle: cycle,
           currency: chargeCurrency,
-          coupon: coupon ?? null,
           ...(offer ? { offer: true } : {}),
           source,
           sessionId,
@@ -436,29 +413,13 @@ export function PricingCards() {
           const perCycle =
             billingCycle === "weekly" ? copy.perWeek : billingCycle === "monthly" ? copy.perMonth : copy.perYear;
           const price = local.price(billingCycle);
-          // EARLY35 so no mensal (regra 4.0): semanal e anual nunca riscam o preco.
-          const monthlyOffer = billingCycle === "monthly" ? offerPrice : null;
           return (
           <div key={plan.id} className="site-price">
             <span className="site-eyebrow">{cardCopy.badge}</span>
-            {monthlyOffer ? (
-              <>
-                <div className="site-price-amt">
-                  <s>
-                    <span className="sr-only">{t.commercial.offerRegular} </span>
-                    {price}
-                  </s>
-                  <b>{monthlyOffer}</b>
-                  <span>{t.commercial.offerFirstMonth}</span>
-                </div>
-                <p className="site-price-then">{interpolate(t.commercial.offerThen, local.params)}</p>
-              </>
-            ) : (
-              <div className="site-price-amt">
-                <b>{price}</b>
-                <span>{perCycle}</span>
-              </div>
-            )}
+            <div className="site-price-amt">
+              <b>{price}</b>
+              <span>{perCycle}</span>
+            </div>
             <p className="site-price-sub">
               {cardCopy.ticks} · {cardCopy.analyses}
             </p>
@@ -480,17 +441,9 @@ export function PricingCards() {
             >
               {loadingPlan === plan.id
                 ? copy.processing
-                : monthlyOffer
-                  ? interpolate(t.commercial.offerCta, { price: monthlyOffer })
-                  : `${cardCopy.cta} · ${price}${perCycle}`}
+                : `${cardCopy.cta} · ${price}${perCycle}`}
             </button>
-            {monthlyOffer && foundingOffer ? (
-              <p className="site-price-fine">
-                {interpolate(copy.firstMonth, { price: monthlyOffer, code: foundingOffer.code, pct: foundingOffer.percentOff ?? 0 })}
-              </p>
-            ) : (
-              <p className="site-price-fine">{renewalNote}</p>
-            )}
+            <p className="site-price-fine">{renewalNote}</p>
           </div>
           );
         })}

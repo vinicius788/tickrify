@@ -18,7 +18,7 @@ function quotaCount(q: { signals: number; total?: number; inFlight?: number }) {
   });
 }
 
-function makeDeps(opts: { quota: { signals: number; total?: number; inFlight?: number }; alreadySent?: boolean; paid?: boolean; email?: string | null; offerActive?: boolean; sendOk?: boolean }) {
+function makeDeps(opts: { quota: { signals: number; total?: number; inFlight?: number }; alreadySent?: boolean; paid?: boolean; email?: string | null; sendOk?: boolean }) {
   const sendRecovery = jest.fn().mockResolvedValue(opts.sendOk ?? true);
   const auditCreate = jest.fn().mockResolvedValue({ id: 'audit_1' });
   const auditDelete = jest.fn().mockResolvedValue({});
@@ -38,7 +38,6 @@ function makeDeps(opts: { quota: { signals: number; total?: number; inFlight?: n
     },
     mail: { sendRecovery },
     hasPaidAccess: jest.fn().mockResolvedValue(Boolean(opts.paid)),
-    foundingOffer: jest.fn().mockResolvedValue({ active: opts.offerActive ?? true, code: 'EARLY35', percentOff: 35 }),
     log: jest.fn(),
   } as unknown as RecoveryEmailDeps;
   return { deps, sendRecovery, auditCreate, auditDelete };
@@ -50,22 +49,7 @@ describe('notifyIfFreeQuotaExhausted', () => {
     await notifyIfFreeQuotaExhausted(deps, 'u1');
     expect(auditCreate).toHaveBeenCalledTimes(1);
     expect(auditCreate.mock.calls[0][0].data.action).toBe('recovery_email_sent');
-    expect(sendRecovery).toHaveBeenCalledWith('ana@example.com', expect.objectContaining({ code: 'EARLY35' }));
-  });
-
-  it('cupom esgotado: o e-mail sai sem oferta', async () => {
-    const { deps, sendRecovery } = makeDeps({ quota: { signals: 3 }, offerActive: false });
-    await notifyIfFreeQuotaExhausted(deps, 'u1');
-    expect(sendRecovery).toHaveBeenCalledWith('ana@example.com', null);
-  });
-
-  it('consulta da oferta quebra: o e-mail sai mesmo assim, sem oferta', async () => {
-    const { deps, sendRecovery } = makeDeps({ quota: { signals: 3 } });
-    (deps as any).foundingOffer = () => {
-      throw new Error('stripe fora do ar');
-    };
-    await notifyIfFreeQuotaExhausted(deps, 'u1');
-    expect(sendRecovery).toHaveBeenCalledWith('ana@example.com', null);
+    expect(sendRecovery).toHaveBeenCalledWith('ana@example.com');
   });
 
   it('ainda tem gratis: nao envia', async () => {

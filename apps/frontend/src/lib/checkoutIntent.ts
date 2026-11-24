@@ -91,19 +91,32 @@ export function authUrlForCheckout(intent: CheckoutIntent, mode: 'sign-in' | 'si
  * cadastro ele vai no HASH, e absoluto: `/sign-up#/?redirect_url=https://...`
  * (visto em producao em 21/09/2026). Os dois lugares sao lidos.
  */
-export function checkoutTargetFromAuthSearch(search: string, origin: string, hash = ''): string | null {
+function authRedirectUrl(search: string, origin: string, hash: string): URL | null {
   const hashQuery = hash.includes('?') ? hash.slice(hash.indexOf('?')) : '';
   const raw =
     new URLSearchParams(search).get('redirect_url') ?? new URLSearchParams(hashQuery).get('redirect_url');
   if (!raw) return null;
   try {
     const url = new URL(raw, origin);
-    if (url.origin !== origin || (url.pathname !== RETURN_PATH && url.pathname !== LEGACY_RETURN_PATH)) return null;
-    const intent = parseCheckoutIntent(url.search);
-    return intent ? checkoutReturnPath(intent) : null;
+    return url.origin === origin ? url : null;
   } catch {
     return null;
   }
+}
+
+export function checkoutTargetFromAuthSearch(search: string, origin: string, hash = ''): string | null {
+  const url = authRedirectUrl(search, origin, hash);
+  if (!url || (url.pathname !== RETURN_PATH && url.pathname !== LEGACY_RETURN_PATH)) return null;
+  const intent = parseCheckoutIntent(url.search);
+  return intent ? checkoutReturnPath(intent) : null;
+}
+
+/**
+ * Painel do afiliado (23/11/2026): quem abre /affiliate sem login volta para
+ * ele depois de entrar, inclusive pelo One Tap (que so aceita destino forcado).
+ */
+export function affiliateTargetFromAuthSearch(search: string, origin: string, hash = ''): string | null {
+  return authRedirectUrl(search, origin, hash)?.pathname === '/affiliate' ? '/affiliate' : null;
 }
 
 export function saveCheckoutIntent(intent: CheckoutIntent, now = Date.now()): void {

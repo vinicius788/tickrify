@@ -2,7 +2,6 @@ import Stripe from 'stripe';
 import { portalV2Configuration, PORTAL_V2_API_VERSION, portalUpgradeEnabled } from '../../config/stripe.config';
 import { ConflictException, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { StripeService } from './stripe.service';
-import { resetFoundingOfferCache } from './founding-offer';
 import {
   WEEKLY_PRICE_ID,
   allowanceCadenceForPriceId,
@@ -65,11 +64,6 @@ describe('StripeService.createCheckoutSession', () => {
         update: jest.fn(),
       },
       subscriptions: { list: jest.fn().mockResolvedValue({ data: [] }) },
-      coupons: {
-        retrieve: jest.fn().mockResolvedValue({
-          id: 'EARLY35', valid: true, percent_off: 35, max_redemptions: 50, times_redeemed: 5, redeem_by: null,
-        }),
-      },
       checkout: {
         sessions: {
           list: jest.fn().mockResolvedValue({ data: [] }),
@@ -79,7 +73,6 @@ describe('StripeService.createCheckoutSession', () => {
       },
     };
     (service as any).stripe = stripe;
-    resetFoundingOfferCache();
   });
 
   afterEach(() => {
@@ -101,9 +94,9 @@ describe('StripeService.createCheckoutSession', () => {
       stripe.promotionCodes = { list: jest.fn().mockResolvedValue({ data: p ? [p] : [] }) };
     };
     const open = (cycle: 'monthly' | 'yearly' = 'monthly') =>
-      service.createCheckoutSession('clerk_1', 'starter', cycle, 'usd', 'EARLY35', 'pricing', { consent: false }, undefined, 'FND-ABCD2345');
+      service.createCheckoutSession('clerk_1', 'starter', cycle, 'usd', 'pricing', { consent: false }, undefined, 'FND-ABCD2345');
 
-    it('aplica o codigo pessoal no lugar do EARLY35 e do afiliado, e carimba a sessao', async () => {
+    it('aplica o codigo pessoal no lugar do afiliado, e carimba a sessao', async () => {
       found(promo());
       affiliates.checkoutDiscountFor.mockResolvedValue({ affiliateId: 'aff_1', discount: { promotion_code: 'promo_1' } });
       await open();
@@ -113,7 +106,6 @@ describe('StripeService.createCheckoutSession', () => {
       expect(params.allow_promotion_codes).toBeUndefined();
       expect(params.metadata.coupon).toBe('founder:FND-ABCD2345');
       expect(params.cancel_url).toContain('/dashboard/plans?canceled=true&offer=FND-ABCD2345');
-      expect(stripe.coupons.retrieve).not.toHaveBeenCalled();
       expect(affiliates.checkoutDiscountFor).not.toHaveBeenCalled();
     });
 
@@ -141,16 +133,21 @@ describe('StripeService.createCheckoutSession', () => {
       expect(stripe.checkout.sessions.create).toHaveBeenCalledTimes(1);
     });
 
-    it('sem codigo o comportamento e o de sempre (EARLY35 pre-aplicado)', async () => {
-      await service.createCheckoutSession('clerk_1', 'starter', 'monthly', 'usd', 'EARLY35');
-      expect(stripe.checkout.sessions.create.mock.calls[0][0].discounts).toEqual([{ coupon: 'EARLY35' }]);
+    it('checkout sem afiliado e sem codigo pessoal: nenhum desconto pre-aplicado (EARLY35 saiu)', async () => {
+      for (const cycle of ['weekly', 'monthly', 'yearly'] as const) {
+        await service.createCheckoutSession('clerk_1', 'starter', cycle, 'usd');
+      }
+      for (const [params] of stripe.checkout.sessions.create.mock.calls) {
+        expect(params.discounts).toBeUndefined();
+        expect(params.metadata.coupon).toBe('');
+      }
     });
   });
 
   describe('afiliados', () => {
     const affiliateDiscount = { affiliateId: 'aff_1', discount: { promotion_code: 'promo_1' } };
 
-    it('indicado sem EARLY35: desconto do afiliado pre-aplicado e carimbado na sessao', async () => {
+    it('indicado: desconto do afiliado pre-aplicado e carimbado na sessao', async () => {
       affiliates.checkoutDiscountFor.mockResolvedValue(affiliateDiscount);
       await service.createCheckoutSession('clerk_1', 'starter', 'monthly', 'usd');
 
@@ -161,37 +158,17 @@ describe('StripeService.createCheckoutSession', () => {
       expect(params.subscription_data.metadata.affiliateId).toBe('aff_1');
     });
 
-    it('EARLY35 ativo ganha dos 10% do afiliado (a vitrine promete os 35%)', async () => {
+    it.each(['weekly', 'monthly', 'yearly'] as const)('desconto do afiliado vence em todo ciclo (%s), e a atribuicao do navegador e gravada', async (cycle) => {
       affiliates.checkoutDiscountFor.mockResolvedValue(affiliateDiscount);
-      await service.createCheckoutSession('clerk_1', 'starter', 'monthly', 'usd', 'EARLY35');
-
-      const params = stripe.checkout.sessions.create.mock.calls[0][0];
-      expect(params.discounts).toEqual([{ coupon: 'EARLY35' }]);
-      expect(affiliates.checkoutDiscountFor).not.toHaveBeenCalled();
-    });
-
-    it('EARLY35 aplicado NAO perde a atribuicao: o vinculo do afiliado e gravado igual', async () => {
-      affiliates.checkoutDiscountFor.mockResolvedValue(affiliateDiscount);
-      await service.createCheckoutSession('clerk_1', 'starter', 'monthly', 'usd', 'EARLY35', 'pricing', { consent: false }, {
+      await service.createCheckoutSession('clerk_1', 'starter', cycle, 'usd', 'pricing', { consent: false }, {
         code: 'SAVE10', kind: 'coupon', clickId: null,
       });
       expect(affiliates.claim).toHaveBeenCalledWith('usr_1', { code: 'SAVE10', kind: 'coupon', clickId: null });
-      expect(stripe.checkout.sessions.create.mock.calls[0][0].discounts).toEqual([{ coupon: 'EARLY35' }]);
-    });
-
-    it('EARLY35 esgotado: volta o desconto padrao do afiliado', async () => {
-      stripe.coupons.retrieve.mockResolvedValue({
-        id: 'EARLY35', valid: true, percent_off: 35, max_redemptions: 50, times_redeemed: 50, redeem_by: null,
-      });
-      affiliates.checkoutDiscountFor.mockResolvedValue(affiliateDiscount);
-      await service.createCheckoutSession('clerk_1', 'starter', 'monthly', 'usd', 'EARLY35');
-      const params = stripe.checkout.sessions.create.mock.calls[0][0];
-      expect(params.discounts).toEqual([{ promotion_code: 'promo_1' }]);
-      expect(params.metadata.coupon).toBe('aff:aff_1');
+      expect(stripe.checkout.sessions.create.mock.calls[0][0].discounts).toEqual([{ promotion_code: 'promo_1' }]);
     });
 
     it('confere o vinculo do navegador ANTES de decidir o desconto', async () => {
-      await service.createCheckoutSession('clerk_1', 'starter', 'monthly', 'usd', undefined, 'pricing', { consent: false }, {
+      await service.createCheckoutSession('clerk_1', 'starter', 'monthly', 'usd', 'pricing', { consent: false }, {
         code: 'PARTNER1', kind: 'coupon', clickId: null,
       });
       expect(affiliates.claim).toHaveBeenCalledWith('usr_1', { code: 'PARTNER1', kind: 'coupon', clickId: null });
@@ -203,7 +180,7 @@ describe('StripeService.createCheckoutSession', () => {
     it('falha na atribuicao nunca bloqueia a compra', async () => {
       affiliates.claim.mockRejectedValue(new Error('db down'));
       affiliates.checkoutDiscountFor.mockRejectedValue(new Error('db down'));
-      const result = await service.createCheckoutSession('clerk_1', 'starter', 'monthly', 'usd', undefined, 'pricing', { consent: false }, {
+      const result = await service.createCheckoutSession('clerk_1', 'starter', 'monthly', 'usd', 'pricing', { consent: false }, {
         code: 'PARTNER1', kind: 'link', clickId: 'ckabcdefghijklmnopqrst',
       });
       expect(result.url).toContain('checkout.stripe.com');
@@ -229,7 +206,7 @@ describe('StripeService.createCheckoutSession', () => {
         currency_options: Object.fromEntries(Object.entries(options).map(([c, unit]) => [c, { unit_amount: unit }])),
       });
     const open = (local: 'usd' | 'eur' | 'jpy') =>
-      service.createCheckoutSession('clerk_1', 'starter', 'monthly', 'usd', 'EARLY35', 'pricing', { consent: false }, undefined, undefined, local);
+      service.createCheckoutSession('clerk_1', 'starter', 'monthly', 'usd', 'pricing', { consent: false }, undefined, undefined, local);
 
     it('cobra na moeda que a tela mostrou quando o price tem a opcao, sempre no MESMO price USD', async () => {
       withOptions({ eur: 2700 });
@@ -238,7 +215,6 @@ describe('StripeService.createCheckoutSession', () => {
       expect(params.currency).toBe('eur');
       expect(params.line_items).toEqual([{ price: PRICE, quantity: 1 }]);
       expect(params.metadata).toMatchObject({ currency: 'eur', priceId: PRICE });
-      expect(params.discounts).toEqual([{ coupon: 'EARLY35' }]);
     });
 
     it('price sem a opcao pedida: cobra em USD em vez de falhar', async () => {
@@ -258,7 +234,7 @@ describe('StripeService.createCheckoutSession', () => {
       stripe.checkout.sessions.list.mockResolvedValue({
         data: [{
           id: 'cs_old', mode: 'subscription', currency: 'usd', url: 'https://checkout.stripe.com/c/pay/cs_old',
-          expires_at: Math.floor(Date.now() / 1000) + 3600, metadata: { priceId: PRICE, coupon: 'EARLY35' },
+          expires_at: Math.floor(Date.now() / 1000) + 3600, metadata: { priceId: PRICE, coupon: '' },
         }],
       });
       const result = await open('eur');
@@ -274,8 +250,8 @@ describe('StripeService.createCheckoutSession', () => {
     });
   });
 
-  it('semanal: preco semanal, sem EARLY35 e sem endereco obrigatorio', async () => {
-    await service.createCheckoutSession('clerk_1', 'starter', 'weekly', 'usd', 'EARLY35');
+  it('semanal: preco semanal, sem desconto e sem endereco obrigatorio', async () => {
+    await service.createCheckoutSession('clerk_1', 'starter', 'weekly', 'usd');
 
     expect(stripe.prices.retrieve).toHaveBeenCalledWith(WEEKLY_PRICE_ID);
     const params = stripe.checkout.sessions.create.mock.calls[0][0];
@@ -285,60 +261,14 @@ describe('StripeService.createCheckoutSession', () => {
     expect(params.billing_address_collection).toBe('auto');
   });
 
-  describe('EARLY35 so no mensal (regra do servidor)', () => {
-    const affiliateDiscount = { affiliateId: 'aff_1', discount: { promotion_code: 'promo_1' } };
-    const cases: Array<[cycle: 'monthly' | 'yearly' | 'weekly', expected: unknown]> = [
-      ['monthly', [{ coupon: 'EARLY35' }]],
-      ['yearly', undefined],
-      ['weekly', undefined],
-    ];
-
-    it.each(cases)('%s pedindo EARLY35, sem afiliado', async (cycle, expected) => {
-      await service.createCheckoutSession('clerk_1', 'starter', cycle, 'usd', 'EARLY35');
-      const params = stripe.checkout.sessions.create.mock.calls[0][0];
-      expect(params.discounts).toEqual(expected);
-      expect(params.metadata.coupon).toBe(expected ? 'EARLY35' : '');
-    });
-
-    it.each(['yearly', 'weekly'] as const)('%s sai cheio e SEM campo de codigo (EARLY35 digitado nao vale)', async (cycle) => {
-      await service.createCheckoutSession('clerk_1', 'starter', cycle, 'usd', 'EARLY35');
-      const params = stripe.checkout.sessions.create.mock.calls[0][0];
-      expect(params.discounts).toBeUndefined();
-      expect(params.allow_promotion_codes).toBeUndefined();
-    });
-
-    it('mensal sem desconto automatico (EARLY35 esgotado) mantem o campo de codigo', async () => {
-      stripe.coupons.retrieve.mockResolvedValue({
-        id: 'EARLY35', valid: true, percent_off: 35, max_redemptions: 50, times_redeemed: 50, redeem_by: null,
-      });
-      await service.createCheckoutSession('clerk_1', 'starter', 'monthly', 'usd', 'EARLY35');
-      expect(stripe.checkout.sessions.create.mock.calls[0][0].allow_promotion_codes).toBe(true);
-    });
-
-    // Regra do afiliado NAO mudou: um desconto, o maior. Sem EARLY35 no anual e
-    // no semanal, o 10% do indicado e o que sobra nesses ciclos.
-    it.each([
-      ['monthly', [{ coupon: 'EARLY35' }]],
-      ['yearly', [{ promotion_code: 'promo_1' }]],
-      ['weekly', [{ promotion_code: 'promo_1' }]],
-    ] as const)('%s com indicacao de afiliado', async (cycle, expected) => {
-      affiliates.checkoutDiscountFor.mockResolvedValue(affiliateDiscount);
-      await service.createCheckoutSession('clerk_1', 'starter', cycle, 'usd', 'EARLY35');
-      expect(stripe.checkout.sessions.create.mock.calls[0][0].discounts).toEqual(expected);
-    });
-  });
-
-  it('EARLY35 esgotado: a sessao abre sem desconto, com o campo de codigo', async () => {
-    stripe.coupons.retrieve.mockResolvedValue({
-      id: 'EARLY35', valid: true, percent_off: 35, max_redemptions: 50, times_redeemed: 50, redeem_by: null,
-    });
-    await service.createCheckoutSession('clerk_1', 'starter', 'monthly', 'usd', 'EARLY35');
-
-    expect(stripe.checkout.sessions.create).toHaveBeenCalledTimes(1);
-    const params = stripe.checkout.sessions.create.mock.calls[0][0];
-    expect(params.discounts).toBeUndefined();
-    expect(params.allow_promotion_codes).toBe(true);
-    expect(params.metadata.coupon).toBe('');
+  it.each(['yearly', 'weekly'] as const)('%s sem campo de codigo digitavel; mensal mantem o campo', async (cycle) => {
+    await service.createCheckoutSession('clerk_1', 'starter', cycle, 'usd');
+    (service as any).checkoutInFlight.clear();
+    await service.createCheckoutSession('clerk_1', 'starter', 'monthly', 'usd');
+    const [[other], [monthly]] = stripe.checkout.sessions.create.mock.calls;
+    expect(other.allow_promotion_codes).toBeUndefined();
+    expect(monthly.allow_promotion_codes).toBe(true);
+    expect(monthly.discounts).toBeUndefined();
   });
 
   it('a tela de pagamento diz que cancela quando quiser e que as analises chegam logo', async () => {
@@ -350,8 +280,8 @@ describe('StripeService.createCheckoutSession', () => {
     expect(params.custom_text.submit.message).not.toContain('—');
   });
 
-  it('cria a sessao com o price, as URLs de retorno e o cupom certos', async () => {
-    const result = await service.createCheckoutSession('clerk_1', 'starter', 'monthly', 'usd', 'EARLY35');
+  it('cria a sessao com o price e as URLs de retorno certos, sem cupom', async () => {
+    const result = await service.createCheckoutSession('clerk_1', 'starter', 'monthly', 'usd');
 
     expect(result).toEqual({ sessionId: 'cs_new', url: 'https://checkout.stripe.com/c/pay/cs_new', reused: false });
     const params = stripe.checkout.sessions.create.mock.calls[0][0];
@@ -359,12 +289,12 @@ describe('StripeService.createCheckoutSession', () => {
     expect(params.line_items).toEqual([{ price: PRICE, quantity: 1 }]);
     expect(params.success_url).toBe('https://tickrify.com/dashboard?success=true&session_id={CHECKOUT_SESSION_ID}');
     expect(params.cancel_url).toBe('https://tickrify.com/dashboard/plans?canceled=true');
-    expect(params.discounts).toEqual([{ coupon: 'EARLY35' }]);
-    expect(params.metadata).toMatchObject({ priceId: PRICE, coupon: 'EARLY35', userId: 'usr_1' });
+    expect(params.discounts).toBeUndefined();
+    expect(params.metadata).toMatchObject({ priceId: PRICE, coupon: '', userId: 'usr_1' });
   });
 
   it('nao fixa payment_method_types: os metodos vem da configuracao do painel', async () => {
-    await service.createCheckoutSession('clerk_1', 'starter', 'monthly', 'usd', 'EARLY35');
+    await service.createCheckoutSession('clerk_1', 'starter', 'monthly', 'usd');
     await service.createCheckoutSession('clerk_1', 'starter', 'weekly', 'usd');
     expect(stripe.checkout.sessions.create).toHaveBeenCalledTimes(2);
     for (const [params] of stripe.checkout.sessions.create.mock.calls) {
@@ -395,8 +325,8 @@ describe('StripeService.createCheckoutSession', () => {
 
   it('pedidos simultaneos do mesmo usuario criam UMA sessao e UM customer', async () => {
     const [a, b] = await Promise.all([
-      service.createCheckoutSession('clerk_1', 'starter', 'monthly', 'usd', 'EARLY35'),
-      service.createCheckoutSession('clerk_1', 'starter', 'monthly', 'usd', 'EARLY35'),
+      service.createCheckoutSession('clerk_1', 'starter', 'monthly', 'usd'),
+      service.createCheckoutSession('clerk_1', 'starter', 'monthly', 'usd'),
     ]);
 
     expect(a).toEqual(b);
@@ -440,12 +370,12 @@ describe('StripeService.createCheckoutSession', () => {
     const now = Math.floor(Date.now() / 1000);
     stripe.checkout.sessions.list.mockResolvedValue({
       data: [
-        { id: 'cs_same', mode: 'subscription', currency: 'usd', url: 'https://checkout.stripe.com/c/pay/cs_same', expires_at: now + 3600, metadata: { priceId: PRICE, coupon: 'EARLY35' } },
+        { id: 'cs_same', mode: 'subscription', currency: 'usd', url: 'https://checkout.stripe.com/c/pay/cs_same', expires_at: now + 3600, metadata: { priceId: PRICE, coupon: '' } },
         { id: 'cs_old', mode: 'subscription', url: 'https://checkout.stripe.com/c/pay/cs_old', expires_at: now + 3600, metadata: {} },
       ],
     });
 
-    const result = await service.createCheckoutSession('clerk_1', 'starter', 'monthly', 'usd', 'EARLY35');
+    const result = await service.createCheckoutSession('clerk_1', 'starter', 'monthly', 'usd');
 
     expect(result).toEqual({ sessionId: 'cs_same', url: 'https://checkout.stripe.com/c/pay/cs_same', reused: true });
     expect(stripe.checkout.sessions.expire).toHaveBeenCalledWith('cs_old');
@@ -487,11 +417,12 @@ describe('StripeService.createCheckoutSession', () => {
   });
 
   it('cupom recusado reabre o checkout sem desconto e marca a sessao sem cupom', async () => {
+    affiliates.checkoutDiscountFor.mockResolvedValue({ affiliateId: 'aff_1', discount: { coupon: 'AFF10' } });
     stripe.checkout.sessions.create
-      .mockRejectedValueOnce(new Error('No such coupon: EARLY35'))
+      .mockRejectedValueOnce(new Error('No such coupon: AFF10'))
       .mockResolvedValueOnce({ id: 'cs_full', url: 'https://checkout.stripe.com/c/pay/cs_full' });
 
-    const result = await service.createCheckoutSession('clerk_1', 'starter', 'monthly', 'usd', 'EARLY35');
+    const result = await service.createCheckoutSession('clerk_1', 'starter', 'monthly', 'usd');
 
     expect(result.sessionId).toBe('cs_full');
     const second = stripe.checkout.sessions.create.mock.calls[1][0];
@@ -501,7 +432,7 @@ describe('StripeService.createCheckoutSession', () => {
   });
 
   it('com aceite de cookies: grava o contexto do Meta na sessao; sem aceite, nada', async () => {
-    await service.createCheckoutSession('clerk_1', 'starter', 'monthly', 'usd', undefined, 'pricing', {
+    await service.createCheckoutSession('clerk_1', 'starter', 'monthly', 'usd', 'pricing', {
       consent: true,
       fbp: 'fb.1.1789000000000.123456789',
       fbc: 'fb.1.1789000000000.IwAR0abcdefgh',
@@ -517,7 +448,7 @@ describe('StripeService.createCheckoutSession', () => {
     stripe.checkout.sessions.create.mockClear();
     stripe.checkout.sessions.list.mockResolvedValue({ data: [] });
     (service as any).checkoutInFlight.clear();
-    await service.createCheckoutSession('clerk_1', 'starter', 'monthly', 'usd', undefined, 'pricing', { consent: false });
+    await service.createCheckoutSession('clerk_1', 'starter', 'monthly', 'usd', 'pricing', { consent: false });
     const meta = stripe.checkout.sessions.create.mock.calls[0][0].metadata;
     expect(meta.ads_consent).toBeUndefined();
     expect(meta.ads_ip).toBeUndefined();

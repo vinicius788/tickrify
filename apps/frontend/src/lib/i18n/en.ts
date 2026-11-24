@@ -170,10 +170,6 @@ export default {
     eyebrow: "Pricing",
     title: "One plan. Choose your billing cycle.",
     subtitle: "No tiers to compare and nothing held back for a higher price. Every subscriber runs the same engine, on the same queue, with the same models.",
-    foundingTitle: "Founding Trader offer",
-    foundingDesc: "You are early, and that counts. While this offer lasts, the",
-    foundingCode: "EARLY35",
-    foundingSuffix: "discount is applied automatically at checkout on the monthly plan: 35% off your first month, then {monthly}/month.",
     trust: [
       "Payments secured by Stripe",
       "Cancel anytime in Settings",
@@ -255,7 +251,6 @@ export default {
     partnerInvalid: "That code is not valid.",
     canceledTitle: "Payment canceled",
     canceledDesc: "No charge was made. You can subscribe whenever you want.",
-    firstMonth: "Billed {price} now for the first month with {code} ({pct}% off), applied automatically. Your balance resets to 200 Ticks per month; unused Ticks do not carry over.",
     founderEyebrow: "Founding member",
     founderSub: "Locked for as long as your subscription stays active",
     founderFeatures: [
@@ -302,7 +297,6 @@ export default {
     later: "Maybe later",
     perMonth: "/mo",
     modalMonthly: "Monthly, 200 Ticks",
-    modalMonthlyOffer: "{price} first month, then {monthly}/month",
     modalWeekly: "Weekly, 25 Ticks",
     modalCompare: "Compare all plans",
     modalVideoCaption: "What subscribers get: the entry chart plus up to two higher timeframes, read as one market. 20 seconds.",
@@ -312,10 +306,6 @@ export default {
     waitNudgeWhy: "Why WAIT? (22 s video)",
     plansTitle: "Plans",
     plansSub: "Same engine on every plan. Cancel anytime."
-  },
-  foundingBanner: {
-    text: "Early subscriber offer: {pct}% off your first month on the monthly plan with {code}, applied at checkout. Then {monthly}/month.",
-    cta: "See plans"
   },
   productClarity: {
     readingGuide: "Reading at a glance",
@@ -353,10 +343,6 @@ export default {
     tickCosts: "Quick = 1 Tick · Deep = 3 Ticks",
     weeklyRenewal: "Billed {weekly} now and every 7 days until canceled.",
     monthlyRenewal: "Billed {monthly} now and monthly until canceled.",
-    offerRegular: "Regular price",
-    offerFirstMonth: "first month",
-    offerThen: "Then {monthly}/month. Cancel anytime in Settings.",
-    offerCta: "Start for {price} first month",
     freeEligibility: "One free demo per device, no account. New accounts get a 3-day free trial with 7 analyses, no card.",
   },
 

@@ -12,8 +12,8 @@ import { useAffiliateProgram } from '@/hooks/useAffiliates';
  * Prazos e minimo vem de /api/affiliates/program (as mesmas constantes do
  * backend); sem resposta da API, a pagina diz que nao carregou.
  *
- * O desconto do cliente e anunciado como "at least": o checkout aplica o
- * MAIOR desconto disponivel (a oferta EARLY35 ganha dos 10% enquanto existir).
+ * O desconto do cliente vem do cupom da Stripe (o mesmo que o checkout
+ * aplica a quem chega pelo link ou pelo codigo do afiliado).
  */
 const AffiliatesPage = () => {
   useSeo(seoFor('/affiliates'));
@@ -62,7 +62,7 @@ const AffiliatesPage = () => {
               <div className="site-prose">
                 <p>
                   {program.customerDiscountPercent
-                    ? `Your link and your code give them at least ${program.customerDiscountPercent}% off their first payment. If a bigger launch offer is running, they get that one instead: they always pay the lower price.`
+                    ? `Your link and your code give them ${program.customerDiscountPercent}% off their first payment.`
                     : 'They get the same product and the same price as everyone else, with free access subject to account eligibility.'}{' '}
                   Tickrify reads their chart cold and returns a structured analysis, or tells them to wait. It is a
                   second opinion, not a signal service, and it never promises profits.
@@ -77,8 +77,8 @@ const AffiliatesPage = () => {
                   <span className="site-step-n">01</span>
                   <h3>Apply with your Tickrify account</h3>
                   <p>
-                    It is free. Tell us where your audience is and how you would share Tickrify. We review every
-                    application; once approved, you get a personal referral link and a coupon code.
+                    It is free. Pick your own coupon code and tell us where your audience is. We review every
+                    application; once approved, your code and your personal referral link go live and we email you.
                   </p>
                 </div>
                 <div className="site-step">

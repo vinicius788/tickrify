@@ -42,15 +42,6 @@ export class CreateCheckoutSessionDto {
   localCurrency?: ChargeCurrency;
 
   /**
-   * Cupom pré-aplicado no checkout (whitelist — nunca aceitar cupom arbitrário
-   * do cliente). Usado pelo paywall "Unlock analysis" para chegar no Stripe com
-   * o EARLY35 já aplicado, sem o usuário precisar digitar nada.
-   */
-  @IsOptional()
-  @IsIn(['EARLY35'])
-  coupon?: string;
-
-  /**
    * De onde veio o clique (card da /pricing ou paywall do painel). Lista
    * fechada: vai para a metadata da sessao e da assinatura na Stripe.
    */

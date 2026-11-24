@@ -170,10 +170,6 @@ export default {
     eyebrow: "Tarifs",
     title: "Un seul forfait. Choisissez votre cycle de facturation.",
     subtitle: "Aucun niveau à comparer et aucune fonction réservée à un tarif supérieur. Tous les abonnés utilisent le même moteur, la même file et les mêmes modèles.",
-    foundingTitle: "Offre Founding Trader",
-    foundingDesc: "Vous êtes parmi les premiers, et cela compte. Pendant la durée de cette offre, la réduction",
-    foundingCode: "EARLY35",
-    foundingSuffix: "est appliquée automatiquement au paiement du forfait mensuel : 35% de réduction le premier mois, puis {monthly}/mois.",
     trust: [
       "Paiements sécurisés par Stripe",
       "Annulez à tout moment dans les Paramètres",
@@ -255,7 +251,6 @@ export default {
     partnerInvalid: "Ce code n’est pas valide.",
     canceledTitle: "Paiement annulé",
     canceledDesc: "Aucun prélèvement n’a été effectué. Vous pouvez vous abonner quand vous le souhaitez.",
-    firstMonth: "{price} facturés maintenant pour le premier mois avec {code} ({pct}% de réduction), appliqué automatiquement. Votre solde revient à 200 Ticks par mois ; les Ticks inutilisés ne sont pas reportés.",
     founderEyebrow: "Membre fondateur",
     founderSub: "Prix garanti tant que votre abonnement reste actif",
     founderFeatures: [
@@ -302,7 +297,6 @@ export default {
     later: "Peut-être plus tard",
     perMonth: "/mois",
     modalMonthly: "Mensuel, 200 Ticks",
-    modalMonthlyOffer: "{price} le premier mois, puis {monthly}/mois",
     modalWeekly: "Hebdomadaire, 25 Ticks",
     modalCompare: "Comparer tous les forfaits",
     modalVideoCaption: "Ce que reçoivent les abonnés : le graphique d’entrée et jusqu’à deux unités de temps supérieures, lus comme un seul marché. 20 secondes.",
@@ -312,10 +306,6 @@ export default {
     waitNudgeWhy: "Pourquoi WAIT ? (vidéo de 22 s)",
     plansTitle: "Forfaits",
     plansSub: "Le même moteur pour tous les forfaits. Annulez à tout moment."
-  },
-  foundingBanner: {
-    text: "Offre pour les premiers abonnés : {pct}% de réduction le premier mois du forfait mensuel avec {code}, appliquée au paiement. Puis {monthly}/mois.",
-    cta: "Voir les forfaits"
   },
   productClarity: {
     readingGuide: "La lecture en bref",
@@ -353,10 +343,6 @@ export default {
     tickCosts: "Quick = 1 Tick · Deep = 3 Ticks",
     weeklyRenewal: "{weekly} facturés maintenant puis tous les 7 jours jusqu’à résiliation.",
     monthlyRenewal: "{monthly} facturés maintenant puis chaque mois jusqu’à résiliation.",
-    offerRegular: "Prix normal",
-    offerFirstMonth: "le premier mois",
-    offerThen: "Puis {monthly}/mois. Annulez à tout moment dans les Paramètres.",
-    offerCta: "Commencer à {price} le premier mois",
     freeEligibility: "Une démo gratuite par appareil, sans compte. Les nouveaux comptes reçoivent un essai gratuit de 3 jours avec 7 analyses, sans carte.",
   },
 

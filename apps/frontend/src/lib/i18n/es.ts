@@ -170,10 +170,6 @@ export default {
     eyebrow: "Precios",
     title: "Un solo plan. Elige tu ciclo de facturación.",
     subtitle: "Sin niveles que comparar ni funciones reservadas para un precio mayor. Todos los suscriptores usan el mismo motor, en la misma cola, con los mismos modelos.",
-    foundingTitle: "Oferta Founding Trader",
-    foundingDesc: "Llegaste pronto, y eso cuenta. Mientras dure esta oferta, el descuento",
-    foundingCode: "EARLY35",
-    foundingSuffix: "se aplica automáticamente al pagar el plan mensual: 35% de descuento el primer mes, después {monthly}/mes.",
     trust: [
       "Pagos protegidos por Stripe",
       "Cancela cuando quieras en Configuración",
@@ -255,7 +251,6 @@ export default {
     partnerInvalid: "Ese código no es válido.",
     canceledTitle: "Pago cancelado",
     canceledDesc: "No se realizó ningún cargo. Puedes suscribirte cuando quieras.",
-    firstMonth: "Se cobran {price} ahora por el primer mes con {code} ({pct}% de descuento), aplicado automáticamente. Tu saldo se restablece a 200 Ticks por mes; los Ticks no usados no se acumulan.",
     founderEyebrow: "Miembro fundador",
     founderSub: "Precio fijo mientras tu suscripción siga activa",
     founderFeatures: [
@@ -302,7 +297,6 @@ export default {
     later: "Quizás más tarde",
     perMonth: "/mes",
     modalMonthly: "Mensual, 200 Ticks",
-    modalMonthlyOffer: "{price} el primer mes, después {monthly}/mes",
     modalWeekly: "Semanal, 25 Ticks",
     modalCompare: "Comparar todos los planes",
     modalVideoCaption: "Lo que reciben los suscriptores: el gráfico de entrada y hasta dos temporalidades superiores, leídos como un solo mercado. 20 segundos.",
@@ -312,10 +306,6 @@ export default {
     waitNudgeWhy: "¿Por qué WAIT? (vídeo de 22 s)",
     plansTitle: "Planes",
     plansSub: "El mismo motor en todos los planes. Cancela cuando quieras."
-  },
-  foundingBanner: {
-    text: "Oferta para los primeros suscriptores: {pct}% de descuento el primer mes del plan mensual con {code}, aplicado al pagar. Después {monthly}/mes.",
-    cta: "Ver planes"
   },
   productClarity: {
     readingGuide: "Resumen de la lectura",
@@ -353,10 +343,6 @@ export default {
     tickCosts: "Quick = 1 Tick · Deep = 3 Ticks",
     weeklyRenewal: "Se cobran {weekly} ahora y cada 7 días hasta cancelar.",
     monthlyRenewal: "Se cobran {monthly} ahora y cada mes hasta cancelar.",
-    offerRegular: "Precio normal",
-    offerFirstMonth: "el primer mes",
-    offerThen: "Luego {monthly}/mes. Cancela cuando quieras en Configuración.",
-    offerCta: "Empieza por {price} el primer mes",
     freeEligibility: "Una demo gratis por dispositivo, sin cuenta. Las cuentas nuevas reciben una prueba gratis de 3 días con 7 análisis, sin tarjeta.",
   },
 

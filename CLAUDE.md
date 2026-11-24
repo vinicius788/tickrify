@@ -123,9 +123,9 @@
   `currency_options` do mesmo price (3.3). Adaptive Pricing NAO converte (conta BR).
 - **Gratis:** trial de 3 dias sem cartao (`TRIAL_MODE` LIGADO desde 14/10): 3/2/2
   analises, ate 7 dias. Bonus de opiniao: +3 analises, uma vez.
-- **Cupons:** EARLY35 (35% no 1o mes) so no MENSAL, decidido no servidor
-  (`founding-offer.ts` le da Stripe; some quando acaba). EARLY50 ativo por decisao
-  do dono. FOUNDER15 (Founding Member, US$ 15 travado) pronto, nada enviado.
+- **Cupons:** EARLY35 saiu do site e do checkout em 23/11 (ninguem assinou com ele
+  desde out). Desconto so do afiliado (link, vinculo ou codigo dele) ou FOUNDER15
+  (Founding Member, US$ 15 travado, pronto, nada enviado).
 - **Assinantes:** poucos (3 em set/26, 1 semanal em 05/10). Conta do dono =
   `manual_owner_1` no banco: **toda contagem filtra
   `WHERE "stripeId" NOT LIKE 'manual_%'`.**
@@ -241,8 +241,10 @@ Detalhe completo de cada item: `_local/CLAUDE-historico-ate-2026-11-23.md`.
   Recusas sao quase todas falta de saldo. Abandono e o buraco, nao bug.
 - Portal criado por API (`ensurePortalConfiguration`, cancelar no fim do periodo,
   sem troca de plano). Ex-assinante = modo leitura.
-- Afiliados (`modules/affiliates`): aprovacao manual, 20% por 12 meses, saque
-  manual. Cupom de afiliado NAO existe na Stripe ainda (6.2).
+- Afiliados (`modules/affiliates`): pedido com codigo escolhido (cupom e `?ref=`),
+  aviso ao support@ (teto 10/h); aprovar no /admin so libera se a Stripe criar o
+  promotion code no cupom de `STRIPE_AFFILIATE_COUPON_ID`; boas-vindas 1x
+  (`affiliate_welcome_sent`) no idioma do perfil. 20% por 12 meses, saque manual.
 - Pacotes avulsos removidos; se voltarem, separar saldo comprado do reset mensal.
 
 ### 3.4 Analytics
@@ -417,6 +419,7 @@ Uma linha cada. Detalhe e SQL antigos no arquivo historico (grep pela data).
 
 | Desde | Item | Quem |
 |---|---|---|
+| 23/11 | Stripe: desativar cupom EARLY35 e promotion codes EARLY35 e EARLY50 (saiu do site). | dono |
 | 23/11 | **Twelve Data:** licenca gratis nao permite mostrar preco a cliente. Recomendado Venture US$ 149/mes. Antes de pagar, perguntar ao suporte (so formulario de vendas, sem e-mail publico): display externo, XAU/XAG, WebSocket, indices e petroleo, historico de 1m. Indices/petroleo/futuros dependem dessa resposta. | dono |
 | 23/11 | `ANTHROPIC_API_KEY` no Render confirmada? Sem ela, 2 leitores. Renomear "Strong read" para algo como "2 reads agreed". /admin: conferir no celular e tema claro. | dono / Claude |
 | 17/11 | Checkout de teste por moeda local (sem pagar). Trocar telefone de suporte da Stripe (+55 31 98672 0240 nao e do dono) quando ele mandar. | dono |

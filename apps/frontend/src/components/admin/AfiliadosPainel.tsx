@@ -4,8 +4,11 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import {
+  AFFILIATE_CODE_PATTERN,
+  cleanAffiliateCode,
   formatUsd,
   useAffiliateAdmin,
+  useAffiliateProgram,
   useAffiliateAdminDetail,
   type AdminAffiliate,
   type AdminPayout,
@@ -112,22 +115,55 @@ function Detalhe({ id }: { id: string }) {
   );
 }
 
+/**
+ * Pedido pendente. O codigo que a pessoa escolheu vem preenchido e pode ser
+ * trocado antes de aprovar; aprovar manda o mesmo codigo para o cupom e para o
+ * link. Se a Stripe recusar, o pedido continua pendente e o motivo fica aqui.
+ */
 function PedidoAfiliado({
   afiliado,
   ocupado,
+  semCupom,
+  erro,
   onSalvar,
 }: {
   afiliado: AdminAffiliate;
   ocupado: boolean;
+  semCupom: boolean;
+  erro: string | null;
   onSalvar: (patch: Patch) => void;
 }) {
   const quem = afiliado.email ?? afiliado.referralCode;
+  const [codigo, setCodigo] = useState(afiliado.couponCode);
+  const codigoOk = AFFILIATE_CODE_PATTERN.test(codigo);
+  const aprovar = () =>
+    onSalvar({
+      status: 'ACTIVE',
+      ...(codigo !== afiliado.couponCode ? { couponCode: codigo } : {}),
+      ...(codigo !== afiliado.referralCode ? { referralCode: codigo } : {}),
+    });
   return (
     <Card className="border-[var(--signal-hold-border)] bg-[var(--signal-hold-bg)] p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold text-[var(--text-primary)]">{quem}</p>
           <p className="mt-0.5 text-xs text-[var(--text-dim)]">Pediu para ser afiliado em {dia(afiliado.createdAt)}</p>
+          <label className="mt-3 flex flex-col gap-1 text-xs text-[var(--text-dim)]">
+            Código de cupom (vale também para o link ?ref=). Pode trocar antes de aprovar.
+            <input
+              className={`${campo} font-mono uppercase sm:w-44`}
+              value={codigo}
+              maxLength={20}
+              onChange={(e) => setCodigo(cleanAffiliateCode(e.target.value))}
+              disabled={ocupado}
+            />
+          </label>
+          {!codigoOk && <p className="mt-1 text-xs text-[var(--tone-down-2)]">Use 4 a 20 letras (A a Z) ou números.</p>}
+          {erro && (
+            <p className="mt-2 rounded border border-[var(--signal-sell-border)] bg-[var(--signal-sell-bg)] px-2 py-1.5 text-xs text-[var(--signal-sell)]">
+              Não aprovado: {erro}
+            </p>
+          )}
           {afiliado.application ? (
             <div className="mt-3 space-y-1.5 text-sm text-[var(--text-soft)]">
               <p>
@@ -165,18 +201,25 @@ function PedidoAfiliado({
             <p className="mt-2 text-xs text-[var(--text-faint)]">Não preencheu nada além do e-mail da conta.</p>
           )}
         </div>
-        <div className="flex gap-2">
-          <Button size="sm" disabled={ocupado} onClick={() => onSalvar({ status: 'ACTIVE' })}>
-            Aprovar
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            disabled={ocupado}
-            onClick={() => window.confirm(`Rejeitar o pedido de ${quem}?`) && onSalvar({ status: 'REJECTED' })}
-          >
-            Rejeitar
-          </Button>
+        <div className="flex flex-col items-end gap-1">
+          <div className="flex gap-2">
+            <Button size="sm" disabled={ocupado || !codigoOk} onClick={aprovar}>
+              Aprovar com {codigoOk ? codigo : 'o código'}
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={ocupado}
+              onClick={() => window.confirm(`Rejeitar o pedido de ${quem}?`) && onSalvar({ status: 'REJECTED' })}
+            >
+              Rejeitar
+            </Button>
+          </div>
+          {semCupom && (
+            <p className="max-w-[220px] text-right text-[11px] text-[var(--text-faint)]">
+              Para aprovar falta o cupom de afiliado na Stripe (aviso no topo).
+            </p>
+          )}
         </div>
       </div>
     </Card>
@@ -300,6 +343,9 @@ function LinhaAfiliado({
           <Button size="sm" disabled={ocupado || !mudou} onClick={salvar}>
             Salvar
           </Button>
+          <p className="w-full text-[11px] text-[var(--text-faint)]">
+            Trocar o código de cupom desativa o antigo na Stripe e cria o novo. As vendas antigas continuam deste afiliado.
+          </p>
         </div>
       )}
 
@@ -369,8 +415,13 @@ function LinhaSaque({
 
 export default function AfiliadosPainel() {
   const { affiliates, payouts, update, decide, settle } = useAffiliateAdmin();
+  const { data: programa } = useAffiliateProgram();
   const { toast } = useToast();
   const [historico, setHistorico] = useState(false);
+  const [erros, setErros] = useState<Record<string, string>>({});
+  // Desconto do cliente vem do cupom de STRIPE_AFFILIATE_COUPON_ID; null = falta
+  // ou esta invalido (o servidor recusa a aprovacao e diz o motivo exato).
+  const semCupom = Boolean(programa) && programa?.customerDiscountPercent == null;
 
   if (affiliates.error?.message === 'SEM_ACESSO') return null;
 
@@ -378,7 +429,8 @@ export default function AfiliadosPainel() {
     update.mutate(
       { id, patch },
       {
-        onSuccess: () =>
+        onSuccess: () => {
+          setErros(({ [id]: _antigo, ...resto }) => resto);
           toast({
             title:
               patch.status === 'ACTIVE'
@@ -388,8 +440,12 @@ export default function AfiliadosPainel() {
                   : patch.status === 'SUSPENDED'
                     ? 'Afiliado suspenso'
                     : 'Salvo',
-          }),
-        onError: (e) => toast({ title: 'Não salvou', description: e.message, variant: 'destructive' }),
+          });
+        },
+        onError: (e) => {
+          if (patch.status === 'ACTIVE') setErros((atual) => ({ ...atual, [id]: e.message }));
+          toast({ title: 'Não salvou', description: e.message, variant: 'destructive' });
+        },
       },
     );
 
@@ -424,13 +480,29 @@ export default function AfiliadosPainel() {
 
   return (
     <section>
+      {semCupom && (
+        <Card className="mb-6 border-[var(--signal-sell-border)] bg-[var(--signal-sell-bg)] p-4 text-sm text-[var(--text-soft)]">
+          <p className="font-semibold text-[var(--signal-sell)]">Falta o cupom de afiliado: nenhum pedido pode ser aprovado.</p>
+          <p className="mt-1">
+            Na Stripe, crie um cupom de 10% com duração "once" (Produtos, Cupons). Copie o id dele e ponha em
+            STRIPE_AFFILIATE_COUPON_ID no Render (Environment). Salvar a variável reinicia o serviço; depois é só aprovar.
+          </p>
+        </Card>
+      )}
       <Titulo n={pedidos.length}>Pedidos para aprovar</Titulo>
       {pedidos.length === 0 ? (
         <Vazio>Nenhum pedido novo.</Vazio>
       ) : (
         <div className="space-y-3">
           {pedidos.map((a) => (
-            <PedidoAfiliado key={a.id} afiliado={a} ocupado={update.isPending} onSalvar={(p) => salvar(a.id, p)} />
+            <PedidoAfiliado
+              key={a.id}
+              afiliado={a}
+              ocupado={update.isPending}
+              semCupom={semCupom}
+              erro={erros[a.id] ?? null}
+              onSalvar={(p) => salvar(a.id, p)}
+            />
           ))}
         </div>
       )}

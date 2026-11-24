@@ -57,7 +57,7 @@ import { CheckoutError, createCheckoutSession, openBillingPortal } from "@/lib/s
 import { clerkLightAppearance, useTheme } from "@/lib/theme";
 import SettingsPage from "../dashboard/SettingsPage";
 import { checkoutReturnPath, loadCheckoutIntent } from "@/lib/checkoutIntent";
-import { firstMonthPrice, useFoundingOffer, useLocalPrices } from "@/hooks/useFoundingOffer";
+import { useLocalPrices } from "@/hooks/useFoundingOffer";
 import UpgradeVideo from "../dashboard/UpgradeVideo";
 import { SampleAnalysisView, SamplePicker, type SampleAllowance } from "../dashboard/SampleAnalyses";
 import { SAMPLE_ANALYSES, type SampleKind } from "@/lib/sample-analyses";
@@ -216,11 +216,8 @@ const DashboardPage = () => {
   const navigate = useNavigate();
   const { t, language } = useLanguage();
   const dc = t.dashboardCopy;
-  // Preço do 1º mês com o EARLY35, só quando a Stripe diz que o cupom está ativo.
-  const foundingOffer = useFoundingOffer();
   // Moeda da pessoa (13/11/2026): o modal mostra e o checkout cobra nela.
   const local = useLocalPrices(language);
-  const modalFirstMonth = firstMonthPrice(foundingOffer, language, local);
   const location = useLocation();
   const route = parseDashboardPath(location.pathname);
   const { base } = route;
@@ -663,15 +660,15 @@ const DashboardPage = () => {
   }, []);
   openUpgradeModalRef.current = openUpgradeModal;
 
-  // Paywall → Stripe em 1 clique, com EARLY35 já aplicado. O momento de maior
+  // Paywall → Stripe em 1 clique. O momento de maior
   // intenção do funil não pode passar pela página de pricing genérica.
   const [unlockPending, setUnlockPending] = useState(false);
   // `source` diz de onde veio o clique: paywall da 4a tentativa
   // (`locked_value`) ou o CTA no resultado da ultima gratis (`last_free_result`).
   // Os dois abrem o MESMO checkout: foi o paywall que converteu 12 de 12 em
   // setembro, e 15 de 27 pessoas que usaram a 3a gratis nunca chegaram a ve-lo.
-  // `cycle`: o semanal (US$ 7,99, 25 ticks) sai sem o EARLY35, que e do
-  // primeiro MES; o servidor tambem descarta o cupom nesse caso.
+  // `cycle`: semanal (US$ 7,99, 25 ticks) ou mensal. Desconto so de afiliado,
+  // decidido no servidor.
   const startCheckout = useCallback(async (
     source: 'locked_value' | 'last_free_result' | 'upgrade_modal',
     cycle: 'monthly' | 'weekly' = 'monthly',
@@ -691,11 +688,9 @@ const DashboardPage = () => {
       // pagava igual e recebia 50 ticks a menos que quem passou pelo /pricing.
       // A moeda é USD fixo: o `detectCurrency` daqui mandava navegador pt-BR
       // para o price BRL congelado em jun/2026.
-      // EARLY35 so no mensal (regra do servidor, 05/10/2026).
-      const coupon = cycle === 'monthly' ? 'EARLY35' : undefined;
-      track('upgrade_clicked', { source, cycle, coupon: coupon ?? null, surface });
-      const { url, sessionId } = await createCheckoutSession('starter', token, cycle, 'usd', coupon, source, undefined, local.currency);
-      track('checkout_started', { plan: 'starter', billingCycle: cycle, currency: local.currency, coupon: coupon ?? null, source, surface, sessionId });
+      track('upgrade_clicked', { source, cycle, surface });
+      const { url, sessionId } = await createCheckoutSession('starter', token, cycle, 'usd', source, undefined, local.currency);
+      track('checkout_started', { plan: 'starter', billingCycle: cycle, currency: local.currency, source, surface, sessionId });
       window.location.href = url;
     } catch (error) {
       // Este catch era silencioso: a falha virava um desvio para /pricing sem
@@ -2283,7 +2278,7 @@ const DashboardPage = () => {
             >
               <span className="text-sm font-semibold">{dc.modalMonthly}</span>
               <span className="text-right text-xs font-semibold">
-                {modalFirstMonth ? interpolate(dc.modalMonthlyOffer, { ...local.params, price: modalFirstMonth }) : `${local.price('monthly')}${dc.perMonth}`}
+                {`${local.price('monthly')}${dc.perMonth}`}
               </span>
             </button>
           </div>

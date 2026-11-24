@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   CHECKOUT_INTENT_TTL_MS,
+  affiliateTargetFromAuthSearch,
   authUrlForCheckout,
   checkoutReturnPath,
   checkoutTargetFromAuthSearch,
@@ -65,6 +66,14 @@ describe('checkoutIntent', () => {
     expect(checkoutTargetFromAuthSearch(q('/dashboard'), ORIGIN)).toBeNull();
     expect(checkoutTargetFromAuthSearch(q('javascript:alert(1)'), ORIGIN)).toBeNull();
     expect(checkoutTargetFromAuthSearch('', ORIGIN)).toBeNull();
+  });
+
+  it('painel do afiliado: o login volta para /affiliate, e so deste site', () => {
+    const q = (target: string) => `?redirect_url=${encodeURIComponent(target)}`;
+    expect(affiliateTargetFromAuthSearch(q('/affiliate'), ORIGIN)).toBe('/affiliate');
+    expect(affiliateTargetFromAuthSearch('', ORIGIN, '#/?redirect_url=https%3A%2F%2Ftickrify.com%2Faffiliate')).toBe('/affiliate');
+    expect(affiliateTargetFromAuthSearch(q('https://evil.com/affiliate'), ORIGIN)).toBeNull();
+    expect(affiliateTargetFromAuthSearch(q('/affiliates'), ORIGIN)).toBeNull();
   });
 
   it('le o redirect_url do hash, formato que o Clerk usa ao ir para o cadastro', () => {

@@ -240,6 +240,13 @@ describe('controle de acesso das rotas', () => {
     expect(adminOccurrences.length).toBeGreaterThanOrEqual(promptRoutes.length);
   });
 
+  it('checagem de codigo de afiliado (23/11/2026) exige login: consulta a Stripe a cada chamada', () => {
+    const route = routes.find((r) => r.file === 'affiliates.controller.ts' && r.method === 'checkCode');
+    expect(route).toBeDefined();
+    expect(route!.isPublic).toBe(false);
+    expect(route!.hasGuard).toBe(true);
+  });
+
   it('a lista de rotas públicas é exatamente a esperada', () => {
     // Trava explícita: abrir uma rota nova obriga a editar esta lista, e a
     // edição aparece no diff. É a diferença entre "abrimos de propósito" e
@@ -274,7 +281,6 @@ describe('controle de acesso das rotas', () => {
         // Oferta Founding Member: confere um link pessoal (FND-XXXXXXXX) e so devolve
         // se o codigo existe e esta valido na Stripe; nao expoe lista nem enumera.
         'stripe.controller.ts::getFounderOffer',
-        'stripe.controller.ts::getOffer',
         // Preco do plano por moeda (vitrine sem login); so le os prices da Stripe.
         'stripe.controller.ts::getPrices',
         'stripe.controller.ts::handleWebhook',

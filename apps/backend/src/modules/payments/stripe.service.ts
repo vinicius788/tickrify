@@ -20,14 +20,11 @@ import { funnelLog, safeErrorFields } from '../../common/observability/funnel-lo
 import {
   FOUNDER_CLOSED,
   FOUNDER_COUPON_ID,
-  FOUNDING_COUPON_ID,
   createFounderPromotionCode,
   ensureFounderCoupon,
   findFounderPromotion,
   founderOfferFromPromotion,
-  getFoundingOffer,
   type FounderOffer,
-  type FoundingOffer,
 } from './founding-offer';
 import { AffiliatesService, type ReferralKind } from '../affiliates/affiliates.service';
 import { MailService } from '../mail/mail.service';
@@ -212,11 +209,6 @@ export class StripeService implements OnModuleInit {
     } catch (error) {
       this.logger.error('[webhook] Nao consegui garantir a tabela StripeWebhookEvent.', error);
     }
-  }
-
-  /** Oferta EARLY35 como a Stripe a ve agora (cache de 10 min). */
-  getFoundingOffer(): Promise<FoundingOffer> {
-    return getFoundingOffer(this.stripe);
   }
 
   /**
@@ -408,7 +400,6 @@ export class StripeService implements OnModuleInit {
     planType: PlanType,
     billingCycle: BillingCycle,
     currency: Currency = 'usd',
-    couponId?: string,
     source?: 'pricing' | 'locked_value' | 'last_free_result' | 'upgrade_modal',
     ads: MetaAdsContext = { consent: false },
     referral?: CheckoutReferral,
@@ -421,7 +412,7 @@ export class StripeService implements OnModuleInit {
       return inFlight;
     }
 
-    const run = this.createCheckoutSessionUnlocked(clerkUserId, planType, billingCycle, currency, couponId, source, ads, referral, founderCode, localCurrency)
+    const run = this.createCheckoutSessionUnlocked(clerkUserId, planType, billingCycle, currency, source, ads, referral, founderCode, localCurrency)
       .finally(() => this.checkoutInFlight.delete(clerkUserId));
     this.checkoutInFlight.set(clerkUserId, run);
     return run;
@@ -432,7 +423,6 @@ export class StripeService implements OnModuleInit {
     planType: PlanType,
     billingCycle: BillingCycle,
     currency: Currency,
-    couponId?: string,
     source?: 'pricing' | 'locked_value' | 'last_free_result' | 'upgrade_modal',
     ads: MetaAdsContext = { consent: false },
     referral?: CheckoutReferral,
@@ -485,15 +475,6 @@ export class StripeService implements OnModuleInit {
       const customerId = await this.resolveOrCreateCustomerId(user);
       const stripe = this.getStripeClient();
 
-      // Cupom esgotado ou expirado nao vai para a sessao: a vitrine ja parou de
-      // anuncia-lo, e a sessao sem ele abre de primeira em vez de depender do
-      // fallback de erro mais abaixo.
-      // EARLY35 e "35% no primeiro MES": vale SO no mensal (decisao de
-      // 05/10/2026). No semanal viraria 35% da primeira semana, e no anual
-      // 35% de US$ 290 (US$ 188,50), o que nenhuma pagina promete. A regra
-      // mora AQUI: a vitrine so mostra o desconto onde o servidor aplica.
-      if (billingCycle !== 'monthly') couponId = undefined;
-
       // Founding Member (link pessoal): valida o codigo na Stripe ANTES de abrir
       // a sessao. Codigo recusado NUNCA cai no preco cheio em silencio: quem
       // clicou esperando US$ 15 e chegasse num checkout de US$ 29 sentiria que
@@ -503,11 +484,6 @@ export class StripeService implements OnModuleInit {
         const promo = billingCycle === 'monthly' ? await findFounderPromotion(stripe, founderCode) : null;
         if (!founderOfferFromPromotion(promo).active) throw this.founderUnavailable(user.id);
         founderPromotionId = promo?.id;
-        couponId = undefined;
-      }
-      if (couponId === FOUNDING_COUPON_ID && !(await this.getFoundingOffer()).active) {
-        this.logger.warn(`[stripe] ${FOUNDING_COUPON_ID} sem usos ou expirado; checkout sem desconto.`);
-        couponId = undefined;
       }
 
       // Afiliado: o vinculo e conferido AQUI (clique de ate 30 dias, sem
@@ -521,19 +497,16 @@ export class StripeService implements OnModuleInit {
         }
       }
 
-      // UM desconto por sessao: vale o maior. O EARLY35 (35%) ganha dos 10% do
-      // afiliado enquanto existir, porque a /pricing e o paywall prometem os
-      // 35% "aplicados automaticamente" e a promessa tem que valer para todos.
-      // A comissao sai sobre o valor pago de fato, entao o afiliado segue
-      // recebendo pela indicacao (vinculo no banco, nao no cupom).
+      // UM desconto por sessao. Sem EARLY35 desde 23/11/2026 (decisao do dono):
+      // o link pessoal Founding Member vale primeiro; senao, quem chegou pelo
+      // link do afiliado (vinculo gravado) ou digitou o codigo dele recebe o
+      // desconto do afiliado. Sem afiliado, sem desconto.
       const sessionCurrency = await this.sessionCurrencyFor(priceId, localCurrency, Boolean(founderPromotionId));
 
       let discount: Stripe.Checkout.SessionCreateParams.Discount | undefined = founderPromotionId
         ? { promotion_code: founderPromotionId }
-        : couponId
-          ? { coupon: couponId }
-          : undefined;
-      let discountLabel = founderPromotionId ? `founder:${founderCode}` : couponId ?? '';
+        : undefined;
+      let discountLabel = founderPromotionId ? `founder:${founderCode}` : '';
       let affiliateId: string | null = null;
       if (!discount) {
         const affiliateDiscount = await this.affiliates.checkoutDiscountFor(user.id).catch(() => null);
@@ -655,8 +628,7 @@ export class StripeService implements OnModuleInit {
         },
         // SEM trial: o "grátis" do Tickrify são as 3 análises gratuitas (freemium
         // de uso). Um trial de tempo por cima seria redundante — não dá ticks a
-        // mais, só adiaria a receita e abriria churn involuntário. Cobra já; o
-        // incentivo de entrada fica no cupom EARLY35 (35% no 1º mês).
+        // mais, só adiaria a receita e abriria churn involuntário. Cobra já.
         metadata: {
           userId: user.id,
           clerkUserId,
@@ -699,17 +671,12 @@ export class StripeService implements OnModuleInit {
        * aberto no checkout.
        *
        * ⚠️ O RISCO QUE ESTE FALLBACK COBRE: cupom pre-aplicado que a Stripe
-       * recusa (esgotou os 50 usos, expirou, foi apagado) faz o
-       * `sessions.create` LANCAR, e o usuario nao ve checkout nenhum. Ou seja,
-       * o dia em que o EARLY35 acabar seria tambem o dia em que 100% dos
-       * checkouts parariam de abrir, sem ninguem relacionar as duas coisas.
-       * Com o fallback, o cupom morto apenas deixa de descontar. Vale igual para
-       * o desconto de afiliado.
+       * recusa (esgotou, expirou, foi apagado) faz o `sessions.create`
+       * LANCAR, e o usuario nao ve checkout nenhum. Com o fallback, o cupom
+       * morto apenas deixa de descontar.
        */
-      // Campo de codigo digitavel SO no mensal (05/10/2026, decisao do dono):
-      // o EARLY35 e "35% no 1o mes para os primeiros 50" e nao pode valer no
-      // anual nem no semanal nem digitado a mao. O codigo promocional EARLY35
-      // da Stripe vale para qualquer produto, entao a trava tem que ser aqui.
+      // Campo de codigo digitavel SO no mensal (05/10/2026, decisao do dono;
+      // anual e semanal seguem pendentes de decisao no CLAUDE.md).
       const campoDeCodigo = billingCycle === 'monthly';
       const abrirCheckout = (comCupom: boolean) =>
         stripe.checkout.sessions.create({

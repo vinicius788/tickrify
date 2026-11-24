@@ -170,7 +170,6 @@ export async function createCheckoutSession(
   token: string,
   billingCycle: BillingCycle = 'monthly',
   currency: Currency = 'usd',
-  coupon?: 'EARLY35',
   source?: 'pricing' | 'locked_value' | 'last_free_result' | 'upgrade_modal',
   offerCode?: string,
   localCurrency: ChargeCurrency = 'usd',
@@ -189,7 +188,6 @@ export async function createCheckoutSession(
         currency,
         // Moeda em que a tela mostrou o preco: o checkout cobra nela.
         localCurrency,
-        ...(coupon ? { coupon } : {}),
         ...(source ? { source } : {}),
         // Link pessoal Founding Member: o servidor confere o codigo na Stripe.
         ...(offerCode ? { offerCode } : {}),

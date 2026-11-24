@@ -38,12 +38,16 @@ export class ClaimAffiliateDto {
 }
 
 /**
- * Pedido de entrada. NADA obrigatorio (dono, 13/10/2026): quem nao tem
- * comunidade tambem pode pedir; o admin ja ve o e-mail da conta. O que vier
- * preenchido continua validado: link so https (vira link clicavel no /admin).
- * O texto livre so aparece para o admin, nunca perto do prompt do motor.
+ * Pedido de entrada. So o codigo de cupom e obrigatorio (23/11/2026): a
+ * pessoa escolhe (A-Z e numeros, 4 a 20, gravado em maiusculas). O resto e
+ * opcional (dono, 13/10/2026): quem nao tem comunidade tambem pode pedir. O
+ * que vier preenchido continua validado: link so https (vira link clicavel no
+ * /admin). O texto livre so aparece para o admin, nunca perto do prompt do motor.
  */
 export class JoinAffiliateDto {
+  @Matches(CODE_INPUT)
+  couponCode!: string;
+
   @IsOptional()
   @IsIn(['youtube', 'instagram', 'tiktok', 'x', 'telegram', 'discord', 'website', 'other'])
   platform?: string;
@@ -61,6 +65,12 @@ export class JoinAffiliateDto {
   @IsString()
   @MaxLength(500)
   note?: string;
+}
+
+/** "Este codigo esta livre?" enquanto a pessoa digita no formulario de pedido. */
+export class CheckAffiliateCodeDto {
+  @Matches(CODE_INPUT)
+  code!: string;
 }
 
 export class RequestPayoutDto {

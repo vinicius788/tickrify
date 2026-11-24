@@ -170,10 +170,6 @@ export default {
     eyebrow: "料金",
     title: "プランは1つ。請求サイクルを選択できます。",
     subtitle: "比較するプラン階層も、高額プラン限定の機能もありません。すべての契約者が同じエンジン、同じキュー、同じモデルを利用します。",
-    foundingTitle: "Founding Trader オファー",
-    foundingDesc: "早期に参加いただいたことへの感謝を込めて。このオファー期間中は、割引コード",
-    foundingCode: "EARLY35",
-    foundingSuffix: "が月額プランの決済時に自動適用されます。初月は35%割引、その後は月額{monthly}です。",
     trust: [
       "Stripeによる安全な決済",
       "設定からいつでも解約可能",
@@ -255,7 +251,6 @@ export default {
     partnerInvalid: "このコードは無効です。",
     canceledTitle: "支払いがキャンセルされました",
     canceledDesc: "請求は発生していません。いつでも契約できます。",
-    firstMonth: "{code}（{pct}%割引）を自動適用し、初月分として今すぐ{price}を請求します。残高は毎月200 Ticksにリセットされ、未使用のTicksは繰り越されません。",
     founderEyebrow: "創設メンバー",
     founderSub: "契約が有効な間は価格が固定されます",
     founderFeatures: [
@@ -302,7 +297,6 @@ export default {
     later: "後で",
     perMonth: "/月",
     modalMonthly: "月額、200 Ticks",
-    modalMonthlyOffer: "初月{price}、その後は月額{monthly}",
     modalWeekly: "週額、25 Ticks",
     modalCompare: "すべてのプランを比較",
     modalVideoCaption: "契約者が利用できる内容：エントリーチャートと最大2つの上位時間足を、1つの市場として分析します。20秒。",
@@ -312,10 +306,6 @@ export default {
     waitNudgeWhy: "WAITの理由は？（22秒の動画）",
     plansTitle: "プラン",
     plansSub: "すべてのプランで同じエンジン。いつでも解約可能です。"
-  },
-  foundingBanner: {
-    text: "早期契約者向けオファー：月額プランの初月が{pct}%割引。{code}を決済時に適用します。その後は月額{monthly}です。",
-    cta: "プランを見る"
   },
   productClarity: {
     readingGuide: "分析の要点",
@@ -353,10 +343,6 @@ export default {
     tickCosts: "Quick = 1 Tick · Deep = 3 Ticks",
     weeklyRenewal: "現在および解約まで7日ごとに{weekly}を請求。",
     monthlyRenewal: "現在および解約まで毎月{monthly}を請求。",
-    offerRegular: "通常価格",
-    offerFirstMonth: "初月",
-    offerThen: "その後は月額{monthly}。設定からいつでも解約可能。",
-    offerCta: "初月{price}で始める",
     freeEligibility: "アカウントなしの無料デモは1デバイスにつき1回。新規アカウントには分析7回の3日間無料トライアル（カード不要）。",
   },
 

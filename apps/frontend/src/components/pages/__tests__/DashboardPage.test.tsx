@@ -1083,7 +1083,7 @@ describe('DashboardPage', () => {
 
       await user.click(await screen.findByRole('button', { name: /uma semana: \$7,99/ }));
       await waitFor(() =>
-        expect(mockTrack).toHaveBeenCalledWith('checkout_started', expect.objectContaining({ source: 'locked_value', surface: 'journal', billingCycle: 'weekly', coupon: null })),
+        expect(mockTrack).toHaveBeenCalledWith('checkout_started', expect.objectContaining({ source: 'locked_value', surface: 'journal', billingCycle: 'weekly' })),
       );
     });
 

@@ -4,7 +4,7 @@ import { AuthGuard } from '../auth/auth.guard';
 import { Public } from '../../common/decorators/public.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { AffiliatesService } from './affiliates.service';
-import { ClaimAffiliateDto, JoinAffiliateDto, RequestPayoutDto, TrackAffiliateDto } from './dto/affiliates.dto';
+import { CheckAffiliateCodeDto, ClaimAffiliateDto, JoinAffiliateDto, RequestPayoutDto, TrackAffiliateDto } from './dto/affiliates.dto';
 
 type AuthenticatedUser = { id?: string; clerkUserId: string };
 
@@ -54,6 +54,17 @@ export class AffiliatesController {
   @Throttle({ default: { limit: 60, ttl: 60_000 } })
   async me(@CurrentUser() user: AuthenticatedUser) {
     return this.affiliates.getDashboard(this.requireId(user));
+  }
+
+  /**
+   * Formulario de pedido: o codigo escolhido esta livre? Logado (o formulario
+   * so existe no painel) e com teto proprio, porque cada chamada consulta a Stripe.
+   */
+  @Post('code-check')
+  @UseGuards(AuthGuard)
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  checkCode(@Body() body: CheckAffiliateCodeDto) {
+    return this.affiliates.checkCode(body.code);
   }
 
   @Post('join')

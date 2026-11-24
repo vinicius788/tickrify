@@ -19,13 +19,13 @@ describe('createCheckoutSession', () => {
     );
     vi.stubGlobal('fetch', fetchMock);
 
-    const result = await createCheckoutSession('starter', 'tok', 'monthly', 'usd', 'EARLY35');
+    const result = await createCheckoutSession('starter', 'tok', 'monthly', 'usd');
 
     expect(result.url).toBe('https://checkout.stripe.com/c/pay/cs_1');
     const [, init] = fetchMock.mock.calls[0];
     // Sem aceite de cookies: `adsConsent: false` e nenhum fbp/fbc.
     expect(JSON.parse(init.body)).toEqual({
-      planType: 'starter', billingCycle: 'monthly', currency: 'usd', coupon: 'EARLY35', localCurrency: 'usd', adsConsent: false,
+      planType: 'starter', billingCycle: 'monthly', currency: 'usd', localCurrency: 'usd', adsConsent: false,
     });
     expect(init.headers.Authorization).toBe('Bearer tok');
   });
@@ -34,7 +34,7 @@ describe('createCheckoutSession', () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ sessionId: 'cs_1', url: 'https://checkout.stripe.com/c/pay/cs_1' }));
     vi.stubGlobal('fetch', fetchMock);
 
-    await createCheckoutSession('starter', 'tok', 'weekly', 'usd', undefined, 'pricing', undefined, 'eur');
+    await createCheckoutSession('starter', 'tok', 'weekly', 'usd', 'pricing', undefined, 'eur');
 
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(body.currency).toBe('usd');
@@ -66,8 +66,8 @@ describe('createCheckoutSession', () => {
     );
     vi.stubGlobal('fetch', fetchMock);
 
-    await createCheckoutSession('starter', 'tok', 'monthly', 'usd', undefined, 'pricing', 'FND-ABCD2345');
-    await createCheckoutSession('starter', 'tok', 'monthly', 'usd', undefined, 'pricing');
+    await createCheckoutSession('starter', 'tok', 'monthly', 'usd', 'pricing', 'FND-ABCD2345');
+    await createCheckoutSession('starter', 'tok', 'monthly', 'usd', 'pricing');
 
     expect(JSON.parse(fetchMock.mock.calls[0][1].body).offerCode).toBe('FND-ABCD2345');
     expect(JSON.parse(fetchMock.mock.calls[1][1].body)).not.toHaveProperty('offerCode');

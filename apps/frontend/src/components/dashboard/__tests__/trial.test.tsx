@@ -9,12 +9,10 @@ import type { TrialUsage } from '@/lib/api';
 vi.mock('@/lib/analytics', () => ({ track: vi.fn() }));
 vi.mock('@clerk/clerk-react', () => ({ useAuth: () => ({ getToken: async () => null }) }));
 vi.mock('@/hooks/useTicks', () => ({ useTicks: () => ({ balance: 0 }) }));
-const offer = { current: null as null | { active: boolean; code: string; percentOff: number | null } };
 vi.mock('@/hooks/useFoundingOffer', async (importOriginal) => {
   const mod = await importOriginal<typeof import('@/hooks/useFoundingOffer')>();
   return {
     ...mod,
-    useFoundingOffer: () => offer.current,
     useLocalPrices: (language: Parameters<typeof mod.localPricesFrom>[1]) => mod.localPricesFrom(null, language),
   };
 });
@@ -117,25 +115,16 @@ describe('trial de 3 dias no painel', () => {
     expect(document.querySelector('s')).toBeNull();
   });
 
-  it('paywall com EARLY35 ativo: so o mensal mostra $29 riscado e o preco do 1o mes', () => {
-    offer.current = { active: true, code: 'EARLY35', percentOff: 35 };
-    try {
-      render(
-        <MemoryRouter>
-          <LanguageProvider>
-            <Paywall surface="new_analysis" onWeekly={vi.fn()} onMonthly={vi.fn()} plansHref="/dashboard/plans" />
-          </LanguageProvider>
-        </MemoryRouter>,
-      );
-      expect(document.querySelectorAll('s')).toHaveLength(1);
-      expect(document.querySelector('s')?.textContent).toBe('Regular price $29');
-      expect(screen.getByText('$18.85')).toBeTruthy();
-      expect(screen.getByRole('button', { name: 'Start for $18.85 first month' })).toBeTruthy();
-      expect(screen.getByText('Then $29/month. Cancel anytime in Settings.')).toBeTruthy();
-      // O semanal segue sem desconto.
-      expect(screen.getByRole('button', { name: 'Start with one week: $7.99 for 25 quick analyses' })).toBeTruthy();
-    } finally {
-      offer.current = null;
-    }
+  it('paywall sem oferta de lancamento: nenhum preco riscado nem 1o mes (EARLY35 saiu em 23/11/2026)', () => {
+    render(
+      <MemoryRouter>
+        <LanguageProvider>
+          <Paywall surface="new_analysis" onWeekly={vi.fn()} onMonthly={vi.fn()} plansHref="/dashboard/plans" />
+        </LanguageProvider>
+      </MemoryRouter>,
+    );
+    expect(document.querySelector('s')).toBeNull();
+    expect(document.body.textContent).not.toMatch(/EARLY\d|35\s?%/);
+    expect(screen.getByRole('button', { name: 'Or monthly: $29/month for 200 quick analyses' })).toBeTruthy();
   });
 });

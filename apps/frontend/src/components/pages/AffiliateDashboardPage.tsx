@@ -1,9 +1,18 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useUser } from '@clerk/clerk-react';
 import SiteLayout from '@/components/layout/SiteLayout';
 import { seoFor, useSeo } from '@/hooks/useSeo';
 import { useToast } from '@/hooks/use-toast';
-import { formatUsd, useAffiliateDashboard, type AffiliateApplication, type CommissionStatus } from '@/hooks/useAffiliates';
+import {
+  AFFILIATE_CODE_PATTERN,
+  cleanAffiliateCode,
+  formatUsd,
+  suggestAffiliateCode,
+  useAffiliateDashboard,
+  type AffiliateApplication,
+  type CommissionStatus,
+} from '@/hooks/useAffiliates';
 
 /**
  * Painel do afiliado (/affiliate, logado, noindex).
@@ -43,26 +52,77 @@ const AUDIENCES: Array<{ value: AffiliateApplication['audience']; label: string 
 const inputClass =
   'w-full rounded-lg border border-[var(--s-hair)] bg-transparent px-3 py-2 text-base text-[var(--s-fg)]';
 
+type CodeState = 'idle' | 'checking' | 'available' | 'taken' | 'invalid' | 'unknown';
+
+const CODE_HINT: Record<CodeState, string> = {
+  idle: '',
+  checking: 'Checking...',
+  available: 'Available.',
+  taken: 'This code is already in use. Try another one.',
+  invalid: 'Use 4 to 20 letters (A to Z) or numbers.',
+  unknown: '',
+};
+
 /**
- * Pedido de entrada. Nada obrigatorio (dono, 13/10/2026): o admin ja ve o
- * e-mail da conta, e quem nao tem comunidade tambem pode pedir. So vai ao
- * servidor o que foi preenchido; o link, se vier, precisa ser https
+ * Pedido de entrada. So o codigo de cupom e obrigatorio (23/11/2026): vem
+ * sugerido com o primeiro nome + o desconto do cupom (ex.: EIGLA10) e a tela
+ * diz na hora se ja esta em uso. O resto continua opcional (dono, 13/10/2026);
+ * so vai ao servidor o que foi preenchido, e o link, se vier, precisa ser https
  * (JoinAffiliateDto confere o mesmo).
  */
-function ApplicationForm({ sending, onSubmit }: { sending: boolean; onSubmit: (a: AffiliateApplication) => void }) {
+function ApplicationForm({
+  sending,
+  onSubmit,
+  suggestedCode,
+  checkCode,
+}: {
+  sending: boolean;
+  onSubmit: (a: AffiliateApplication) => void;
+  suggestedCode: string;
+  checkCode: (code: string) => Promise<{ available: boolean; reason?: 'invalid' | 'taken' }>;
+}) {
+  const [code, setCode] = useState(suggestedCode);
+  const [edited, setEdited] = useState(false);
+  const [codeState, setCodeState] = useState<CodeState>('idle');
   const [platform, setPlatform] = useState<AffiliateApplication['platform'] | ''>('');
   const [url, setUrl] = useState('');
   const [audience, setAudience] = useState<AffiliateApplication['audience'] | ''>('');
   const [note, setNote] = useState('');
   const urlOk = url.trim() === '' || /^https:\/\/[^\s.]+\.[^\s]{2,}$/.test(url.trim());
+  const codeOk = AFFILIATE_CODE_PATTERN.test(code) && codeState !== 'taken';
+
+  // O nome e o desconto chegam depois do 1o render: a sugestao acompanha ate a pessoa mexer.
+  useEffect(() => {
+    if (!edited) setCode(suggestedCode);
+  }, [suggestedCode, edited]);
+
+  // Checagem com pausa de 400 ms: a rota tem teto de 20 por minuto.
+  useEffect(() => {
+    if (!code) return setCodeState('idle');
+    if (!AFFILIATE_CODE_PATTERN.test(code)) return setCodeState('invalid');
+    setCodeState('checking');
+    let live = true;
+    const timer = window.setTimeout(() => {
+      checkCode(code)
+        .then((r) => live && setCodeState(r.available ? 'available' : r.reason === 'invalid' ? 'invalid' : 'taken'))
+        .catch(() => live && setCodeState('unknown'));
+    }, 400);
+    return () => {
+      live = false;
+      window.clearTimeout(timer);
+    };
+    // checkCode muda a cada render do hook; o que importa e o codigo.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [code]);
 
   return (
     <form
       className="mt-4 space-y-4"
       onSubmit={(e) => {
         e.preventDefault();
-        if (!urlOk) return;
+        if (!urlOk || !codeOk) return;
         onSubmit({
+          couponCode: code,
           ...(platform ? { platform } : {}),
           ...(url.trim() ? { url: url.trim() } : {}),
           ...(audience ? { audience } : {}),
@@ -70,6 +130,26 @@ function ApplicationForm({ sending, onSubmit }: { sending: boolean; onSubmit: (a
         });
       }}
     >
+      <label className="block text-sm">
+        <span className="mb-1 block text-[var(--s-fg)]">Your coupon code</span>
+        <input
+          type="text"
+          value={code}
+          onChange={(e) => {
+            setEdited(true);
+            setCode(cleanAffiliateCode(e.target.value));
+          }}
+          maxLength={20}
+          autoCapitalize="characters"
+          autoComplete="off"
+          spellCheck={false}
+          aria-describedby="affiliate-code-hint"
+          className={`${inputClass} font-mono uppercase`}
+        />
+        <span id="affiliate-code-hint" className="mt-1 block text-xs text-[var(--s-fg-3)]" aria-live="polite">
+          <span key={codeState}>{CODE_HINT[codeState] || 'Letters A to Z and numbers, 4 to 20 characters. It is also your link code.'}</span>
+        </span>
+      </label>
       <p className="text-sm text-[var(--s-fg-2)]">Everything below is optional. We already have the email on your account.</p>
       <label className="block text-sm">
         <span className="mb-1 block text-[var(--s-fg)]">Where is your audience? (optional)</span>
@@ -116,7 +196,7 @@ function ApplicationForm({ sending, onSubmit }: { sending: boolean; onSubmit: (a
           className={inputClass}
         />
       </label>
-      <button type="submit" disabled={sending || !urlOk} className="site-btn site-btn-primary">
+      <button type="submit" disabled={sending || !urlOk || !codeOk} className="site-btn site-btn-primary">
         {sending ? 'Sending...' : 'Send application'}
       </button>
     </form>
@@ -151,7 +231,8 @@ function CopyField({ label, value }: { label: string; value: string }) {
 const AffiliateDashboardPage = () => {
   useSeo(seoFor('/affiliate'));
   const { toast } = useToast();
-  const { query, join, requestPayout } = useAffiliateDashboard();
+  const { query, join, requestPayout, checkCode } = useAffiliateDashboard();
+  const { user } = useUser();
   const [method, setMethod] = useState('');
   const data = query.data;
   const program = data?.program;
@@ -191,7 +272,12 @@ const AffiliateDashboardPage = () => {
                 community is a good fit for Tickrify.{' '}
                 <Link to="/affiliates">Read the program details.</Link>
               </p>
-              <ApplicationForm sending={join.isPending} onSubmit={onJoin} />
+              <ApplicationForm
+                sending={join.isPending}
+                onSubmit={onJoin}
+                checkCode={checkCode}
+                suggestedCode={suggestAffiliateCode(user?.firstName, program?.customerDiscountPercent)}
+              />
             </div>
           </div>
         </section>
@@ -203,8 +289,8 @@ const AffiliateDashboardPage = () => {
             <div className="site-callout">
               {data.affiliate.status === 'PENDING' ? (
                 <>
-                  <h3>Your application is under review</h3>
-                  <p>We review every application manually. Your referral link and coupon code will appear here once you are approved.</p>
+                  <h3>Request received. We'll review it and email you.</h3>
+                  <p>Your coupon code and referral link will appear here once you are approved.</p>
                 </>
               ) : (
                 <>

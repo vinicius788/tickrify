@@ -7,8 +7,10 @@ import { LanguageProvider } from '@/lib/i18n/LanguageContext';
 import AffiliatesPage from '@/components/pages/AffiliatesPage';
 import AffiliateDashboardPage from '@/components/pages/AffiliateDashboardPage';
 
+const clerkUser = { current: { firstName: 'Eígla' } as { firstName: string | null } };
 vi.mock('@clerk/clerk-react', () => ({
   useAuth: () => ({ isSignedIn: true, getToken: async () => 'tok' }),
+  useUser: () => ({ user: clerkUser.current }),
 }));
 // A casca do site (header, rodape, idioma) nao e o que se testa aqui.
 vi.mock('@/components/layout/SiteLayout', () => ({ default: ({ children }: { children: ReactNode }) => <main>{children}</main> }));
@@ -37,6 +39,7 @@ function renderWith(ui: ReactNode, routes: Record<string, unknown>) {
 
 describe('programa de afiliados na tela', () => {
   afterEach(() => {
+    clerkUser.current = { firstName: 'Eígla' };
     cleanup();
     vi.unstubAllGlobals();
   });
@@ -50,6 +53,9 @@ describe('programa de afiliados na tela', () => {
     // So o desconto do CLIENTE (10%) pode aparecer; nenhuma taxa de comissao.
     expect(text.match(/\d+%/g)).toEqual(['10%']);
     expect(text).not.toMatch(/20%|25%|30%|tier/i);
+    // Sem oferta de lancamento (EARLY35 saiu em 23/11/2026): o desconto e o do afiliado, sem "at least".
+    expect(text).toContain('Your link and your code give them 10% off their first payment.');
+    expect(text).not.toMatch(/at least|launch offer|EARLY\d/i);
   });
 
   it('painel do afiliado ativo mostra so a propria taxa', async () => {
@@ -68,22 +74,46 @@ describe('programa de afiliados na tela', () => {
     expect(document.body.textContent?.match(/\d+%/g)).toEqual(['25%']);
   });
 
-  it('pedido de entrada vazio: envia so com o e-mail da conta (nada obrigatorio)', async () => {
-    renderWith(<AffiliateDashboardPage />, { '/api/affiliates/me': { affiliate: null, program: PROGRAM } });
-    const send = await screen.findByRole('button', { name: 'Send application' });
+  const joinBody = () => {
+    const call = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls.find(([u]) => String(u).includes('/api/affiliates/join'));
+    return call ? JSON.parse(call[1].body) : null;
+  };
+  const FREE = { '/api/affiliates/code-check': { available: true } };
+
+  it('codigo sugerido: primeiro nome em maiusculas, sem acento, mais o desconto do cupom (EIGLA10)', async () => {
+    renderWith(<AffiliateDashboardPage />, { ...FREE, '/api/affiliates/me': { affiliate: null, program: PROGRAM } });
+    const input = (await screen.findByLabelText(/Your coupon code/)) as HTMLInputElement;
+    await waitFor(() => expect(input.value).toBe('EIGLA10'));
+    await screen.findByText('Available.');
+    const send = screen.getByRole('button', { name: 'Send application' });
     expect((send as HTMLButtonElement).disabled).toBe(false);
     fireEvent.click(send);
+    await waitFor(() => expect(joinBody()).toEqual({ couponCode: 'EIGLA10' }));
+  });
 
-    await waitFor(() => {
-      const call = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls.find(([u]) => String(u).includes('/api/affiliates/join'));
-      expect(call).toBeTruthy();
-      expect(JSON.parse(call![1].body)).toEqual({});
+  it('o campo so aceita A-Z e numeros em maiusculas; curto demais bloqueia o envio', async () => {
+    renderWith(<AffiliateDashboardPage />, { ...FREE, '/api/affiliates/me': { affiliate: null, program: PROGRAM } });
+    const input = (await screen.findByLabelText(/Your coupon code/)) as HTMLInputElement;
+    fireEvent.change(input, { target: { value: 'ana-10 é' } });
+    expect(input.value).toBe('ANA10E');
+    fireEvent.change(input, { target: { value: 'ab1' } });
+    await screen.findByText('Use 4 to 20 letters (A to Z) or numbers.');
+    expect((screen.getByRole('button', { name: 'Send application' }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('codigo em uso: a tela avisa na hora e nao deixa enviar', async () => {
+    renderWith(<AffiliateDashboardPage />, {
+      '/api/affiliates/code-check': { available: false, reason: 'taken' },
+      '/api/affiliates/me': { affiliate: null, program: PROGRAM },
     });
+    await screen.findByText('This code is already in use. Try another one.');
+    expect((screen.getByRole('button', { name: 'Send application' }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it('pedido de entrada: link, se vier, precisa ser https; manda o que foi preenchido', async () => {
-    renderWith(<AffiliateDashboardPage />, { '/api/affiliates/me': { affiliate: null, program: PROGRAM } });
+    renderWith(<AffiliateDashboardPage />, { ...FREE, '/api/affiliates/me': { affiliate: null, program: PROGRAM } });
     const send = await screen.findByRole('button', { name: 'Send application' });
+    await screen.findByText('Available.');
 
     fireEvent.change(screen.getByLabelText(/Where is your audience/), { target: { value: 'telegram' } });
     fireEvent.change(screen.getByLabelText(/Link to your profile/), { target: { value: 't.me/tradersgroup' } });
@@ -99,9 +129,8 @@ describe('programa de afiliados na tela', () => {
     fireEvent.click(send);
 
     await waitFor(() => {
-      const call = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls.find(([u]) => String(u).includes('/api/affiliates/join'));
-      expect(call).toBeTruthy();
-      expect(JSON.parse(call![1].body)).toEqual({
+      expect(joinBody()).toEqual({
+        couponCode: 'EIGLA10',
         platform: 'telegram',
         url: 'https://t.me/tradersgroup',
         audience: '10k_50k',
@@ -114,8 +143,25 @@ describe('programa de afiliados na tela', () => {
     renderWith(<AffiliateDashboardPage />, {
       '/api/affiliates/me': { affiliate: { status: 'PENDING', joinedAt: '2026-09-01' }, program: PROGRAM },
     });
-    await screen.findByText('Your application is under review');
+    await screen.findByText("Request received. We'll review it and email you.");
     await waitFor(() => expect(screen.queryByText('Referral link')).toBeNull());
-    expect(screen.queryByText(/Request/)).toBeNull();
+    expect(screen.queryByRole('button', { name: /Request/ })).toBeNull();
+  });
+
+  it('afiliado ACTIVE ve o codigo e o link, cada um com botao de copiar', async () => {
+    renderWith(<AffiliateDashboardPage />, {
+      '/api/affiliates/me': {
+        affiliate: { status: 'ACTIVE', joinedAt: '2026-11-23', referralCode: 'EIGLA10', couponCode: 'EIGLA10', commissionPercent: 20 },
+        program: PROGRAM,
+        stats: { clicks: 0, signups: 0, paidCustomers: 0, revenueCents: 0 },
+        balances: { pendingCents: 0, availableCents: 0, inPayoutCents: 0, paidCents: 0, totalEarnedCents: 0 },
+        canRequestPayout: false,
+        commissions: [],
+        payouts: [],
+      },
+    });
+    await screen.findByText(`${window.location.origin}/?ref=EIGLA10`);
+    expect(screen.getByText('EIGLA10')).toBeTruthy();
+    expect(screen.getAllByRole('button', { name: 'Copy' })).toHaveLength(2);
   });
 });

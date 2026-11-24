@@ -13,7 +13,7 @@ import BrandLoader from "./components/ui/BrandLoader";
 import { useSeo, seoFor } from "@/hooks/useSeo";
 import { warmupPaymentsApi } from "@/lib/api";
 import { scrollToTop } from "@/lib/utils";
-import { checkoutTargetFromAuthSearch } from "@/lib/checkoutIntent";
+import { affiliateTargetFromAuthSearch, checkoutTargetFromAuthSearch } from "@/lib/checkoutIntent";
 
 // ── Code splitting (21/09/2026) ─────────────────────────────────────────────
 // Antes TODAS as paginas iam num arquivo so (1,55 MB, 484 kB gzip): quem abria
@@ -76,7 +76,10 @@ function AuthScreen({ seoPath, children }: { seoPath: "/sign-in" | "/sign-up"; c
 function OneTapOutsideTry() {
   const { pathname, search, hash } = useLocation();
   if (pathname.startsWith("/try")) return null;
-  const target = checkoutTargetFromAuthSearch(search, window.location.origin, hash) ?? "/dashboard";
+  const target =
+    checkoutTargetFromAuthSearch(search, window.location.origin, hash) ??
+    affiliateTargetFromAuthSearch(search, window.location.origin, hash) ??
+    "/dashboard";
   return (
     <SignedOut>
       <GoogleOneTap signInForceRedirectUrl={target} signUpForceRedirectUrl={target} />

@@ -25,8 +25,9 @@ export type CommissionStatus = 'PENDING' | 'AVAILABLE' | 'PAID' | 'CANCELLED';
 export type PayoutStatus = 'REQUESTED' | 'APPROVED' | 'REJECTED' | 'PAID';
 export type AffiliateStatus = 'PENDING' | 'ACTIVE' | 'REJECTED' | 'SUSPENDED';
 
-/** Pedido de entrada (mesmas listas do JoinAffiliateDto). Tudo opcional: so vai o que foi preenchido. */
+/** Pedido de entrada (mesmas listas do JoinAffiliateDto). So o codigo e obrigatorio; o resto vai se preenchido. */
 export interface AffiliateApplication {
+  couponCode: string;
   platform?: 'youtube' | 'instagram' | 'tiktok' | 'x' | 'telegram' | 'discord' | 'website' | 'other';
   url?: string;
   audience?: 'under_1k' | '1k_10k' | '10k_50k' | '50k_plus';
@@ -120,6 +121,21 @@ export interface AdminPayout {
   affiliate: { id: string; referralCode: string; user: { email: string | null } };
 }
 
+/** Mesma regra do servidor: A-Z e numeros, 4 a 20, em maiusculas. */
+export const AFFILIATE_CODE_PATTERN = /^[A-Z0-9]{4,20}$/;
+
+/** O que a pessoa digita vira codigo: maiusculas, sem acento, so A-Z e numeros, ate 20. */
+export function cleanAffiliateCode(value: string): string {
+  return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 20);
+}
+
+/** Sugestao do formulario: primeiro nome + percentual do cupom (ex.: EIGLA10). */
+export function suggestAffiliateCode(firstName: string | null | undefined, percent: number | null | undefined): string {
+  const suffix = percent ? String(percent) : '';
+  const name = cleanAffiliateCode(String(firstName ?? '').split(/\s+/)[0] ?? '').replace(/[0-9]/g, '');
+  return name ? `${name.slice(0, 20 - suffix.length)}${suffix}` : '';
+}
+
 export function formatUsd(cents: number): string {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(cents / 100);
 }
@@ -187,13 +203,19 @@ export function useAffiliateDashboard() {
     onSuccess: (data) => queryClient.setQueryData(['affiliate-me'], data),
   });
 
+  const checkCode = (code: string) =>
+    authed('/api/affiliates/code-check', { method: 'POST', body: JSON.stringify({ code }) }, 'Could not check the code') as Promise<{
+      available: boolean;
+      reason?: 'invalid' | 'taken';
+    }>;
+
   const requestPayout = useMutation<unknown, Error, string>({
     mutationFn: (method) =>
       authed('/api/affiliates/payouts', { method: 'POST', body: JSON.stringify({ method }) }, 'Could not request payout'),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['affiliate-me'] }),
   });
 
-  return { query, join, requestPayout };
+  return { query, join, requestPayout, checkCode };
 }
 
 export function useAffiliateAdmin() {

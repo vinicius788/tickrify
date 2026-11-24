@@ -1,5 +1,5 @@
 import { render, screen } from '@testing-library/react';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import ProtectedRoute from '@/components/routing/ProtectedRoute';
 import { useAuth } from '@clerk/clerk-react';
@@ -61,5 +61,21 @@ describe('ProtectedRoute', () => {
     );
 
     expect(screen.getByText('Sign In Page')).toBeTruthy();
+  });
+
+  it('painel do afiliado sem login: vai ao login e volta para /affiliate depois', () => {
+    vi.mocked(useAuth).mockReturnValue({ isLoaded: true, isSignedIn: false } as ReturnType<typeof useAuth>);
+    const SignInSpy = () => <div>{useLocation().search}</div>;
+
+    render(
+      <MemoryRouter initialEntries={['/affiliate']}>
+        <Routes>
+          <Route path="/sign-in" element={<SignInSpy />} />
+          <Route path="/affiliate" element={<ProtectedRoute><div>Painel</div></ProtectedRoute>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText('?redirect_url=%2Faffiliate')).toBeTruthy();
   });
 });

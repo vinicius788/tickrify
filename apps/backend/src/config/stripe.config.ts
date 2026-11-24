@@ -66,7 +66,7 @@ export const PRICES: Record<PlanType, Record<PlanCycle, Record<Currency, string>
  * semana (mesma regra do mensal: volta para o teto, nao acumula). Mesmo produto
  * e mesmos recursos do starter; muda so o ciclo e o tamanho do pacote. Existe
  * para baixar a entrada de quem nao consegue pagar US$ 29 de uma vez. So USD
- * (a moeda e fixa no servidor) e sem o cupom EARLY35, que e do primeiro MES.
+ * (a moeda e fixa no servidor).
  */
 export const WEEKLY_PRICE_ID = 'price_1UKeWPB1hl0IoocUjsQNv9BG';
 export const WEEKLY_TICKS = 25;

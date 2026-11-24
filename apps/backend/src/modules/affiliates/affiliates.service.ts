@@ -2,17 +2,21 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  HttpException,
   Injectable,
   Logger,
   NotFoundException,
   OnModuleInit,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { createHash, randomInt } from 'crypto';
+import { createHash } from 'crypto';
 import Stripe from 'stripe';
 import { PrismaService } from '../database/prisma.service';
-import { getStripeConfig } from '../../config/stripe.config';
+import { getPriceId, getStripeConfig } from '../../config/stripe.config';
 import { captureServer } from '../../common/analytics/posthog';
+import { MailService } from '../mail/mail.service';
+import { affiliateWelcomeLanguage, renderAffiliateWelcome } from '../mail/affiliate-welcome-email';
 
 /**
  * Programa de afiliados.
@@ -60,8 +64,19 @@ export type ReferralKind = 'link' | 'coupon';
 export type PayoutAction = 'approve' | 'reject' | 'mark_paid';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const HOUR_MS = 60 * 60 * 1000;
 export const AFFILIATE_CODE_RE = /^[A-Z0-9]{4,20}$/;
+
+/**
+ * Aviso ao dono de pedido novo (23/11/2026): no maximo este numero por hora,
+ * contado no AdminAudit (vale entre as 2 instancias). A Resend gratis da 100
+ * e-mails por dia para TUDO; um ataque de pedidos nao pode gastar o dia.
+ */
+export const OWNER_NOTIFY_PER_HOUR = 10;
+export const AUDIT_APPLICATION_NOTIFY = 'affiliate_application_notify';
+/** Boas-vindas sai UMA vez; `retry` marca envio que falhou e precisa de nova tentativa. */
+export const AUDIT_WELCOME_SENT = 'affiliate_welcome_sent';
+export const AUDIT_WELCOME_RETRY = 'affiliate_welcome_retry';
 
 /** Faturas que geram comissao: criacao e renovacao (troca de plano nao). */
 const COMMISSIONABLE_REASONS = ['subscription_create', 'subscription_cycle'];
@@ -82,12 +97,6 @@ export function addMonths(date: Date, months: number): Date {
 
 export function normalizeCode(value: string | null | undefined): string {
   return String(value ?? '').trim().toUpperCase();
-}
-
-function generateCode(length = 8): string {
-  let out = '';
-  for (let i = 0; i < length; i++) out += CODE_ALPHABET[randomInt(CODE_ALPHABET.length)];
-  return out;
 }
 
 function stripeId(ref: string | { id: string } | null | undefined): string | null {
@@ -203,8 +212,12 @@ const BOOT_SQL = [
 
 type ClaimResult = { attributed: boolean; reason?: string };
 
-/** O que a pessoa conta ao pedir para entrar (validado no DTO). Tudo opcional. */
+/**
+ * O que a pessoa manda ao pedir para entrar (validado no DTO). So o codigo de
+ * cupom e obrigatorio (23/11/2026): ela escolhe, o dono pode trocar antes de aprovar.
+ */
 export type AffiliateApplication = {
+  couponCode: string;
   platform?: string;
   url?: string;
   audience?: string;
@@ -232,7 +245,12 @@ export class AffiliatesService implements OnModuleInit {
   private stripe: Stripe | null;
   private discountCache: { value: number | null; at: number } | null = null;
 
-  constructor(private readonly prisma: PrismaService) {
+  private weeklyPriceCache: { value: number | null; at: number } | null = null;
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly mail: MailService,
+  ) {
     const { secretKey } = getStripeConfig();
     this.stripe = secretKey ? new Stripe(secretKey, { apiVersion: '2023-10-16' }) : null;
   }
@@ -259,8 +277,10 @@ export class AffiliatesService implements OnModuleInit {
   async syncMissingPromotionCodes(): Promise<number> {
     if (!this.affiliateCouponId() || !this.stripe) return 0;
     try {
+      // So ACTIVE: pedido PENDING nao reserva codigo na Stripe (23/11/2026); o
+      // codigo nasce na aprovacao.
       const missing = await this.prisma.affiliate.findMany({
-        where: { stripePromotionCodeId: null, status: { in: ['ACTIVE', 'PENDING'] } },
+        where: { stripePromotionCodeId: null, status: 'ACTIVE' },
       });
       let created = 0;
       for (const affiliate of missing) {
@@ -750,48 +770,134 @@ export class AffiliatesService implements OnModuleInit {
   // ── Painel do afiliado ────────────────────────────────────────────────────
 
   /**
-   * Pede entrada no programa, com o que o admin precisa para decidir (canal,
-   * link, audiencia, plano). Idempotente: quem ja pediu recebe o mesmo perfil.
+   * Pede entrada no programa com o codigo de cupom que a pessoa escolheu e o
+   * que o admin precisa para decidir. Idempotente: quem ja pediu recebe o
+   * mesmo perfil. O codigo vale para o cupom E para o link (?ref=). Nada vai
+   * para a Stripe aqui: o promotion code so nasce quando o dono aprova.
    */
   async join(userId: string, application: AffiliateApplication) {
     const existing = await this.prisma.affiliate.findUnique({ where: { userId } });
     if (existing) return existing;
 
-    for (let attempt = 0; attempt < 5; attempt++) {
-      const code = generateCode();
-      const clash = await this.prisma.affiliate.findFirst({
-        where: { OR: [{ referralCode: code }, { couponCode: code }] },
-        select: { id: true },
+    const code = normalizeCode(application.couponCode);
+    const check = await this.checkCode(code);
+    if (!check.available) throw this.codeRefused(code, check.reason);
+
+    let created;
+    try {
+      // Entra PENDING: so vira ACTIVE quando o admin aprova.
+      created = await this.prisma.affiliate.create({
+        data: {
+          userId,
+          referralCode: code,
+          couponCode: code,
+          commissionRateBps: AFFILIATE_RULES.defaultRateBps,
+          status: 'PENDING',
+          applicationPlatform: application.platform || null,
+          applicationUrl: application.url?.trim().slice(0, 300) || null,
+          applicationAudience: application.audience || null,
+          applicationNote: application.note?.trim().slice(0, 500) || null,
+        },
       });
-      if (clash) continue;
-      try {
-        // Entra PENDING: so vira ACTIVE quando o admin aprova.
-        const created = await this.prisma.affiliate.create({
-          data: {
-            userId,
-            referralCode: code,
-            couponCode: code,
-            commissionRateBps: AFFILIATE_RULES.defaultRateBps,
-            status: 'PENDING',
-            applicationPlatform: application.platform || null,
-            applicationUrl: application.url?.trim().slice(0, 300) || null,
-            applicationAudience: application.audience || null,
-            applicationNote: application.note?.trim().slice(0, 500) || null,
-          },
-        });
-        await this.syncPromotionCode(created);
-        this.logger.log(`[affiliate] Novo afiliado ${created.id} (usuario ${userId}).`);
-        return (await this.prisma.affiliate.findUnique({ where: { id: created.id } })) ?? created;
-      } catch (error) {
-        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-          const mine = await this.prisma.affiliate.findUnique({ where: { userId } });
-          if (mine) return mine;
-          continue;
-        }
-        throw error;
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        const mine = await this.prisma.affiliate.findUnique({ where: { userId } });
+        if (mine) return mine;
+        throw this.codeRefused(code, 'taken');
       }
+      throw error;
     }
-    throw new ConflictException({ code: 'affiliate_code_failed', message: 'Could not generate an affiliate code. Please try again.' });
+    this.logger.log(`[affiliate] pedido novo ${created.id} (usuario ${userId}, codigo ${code}).`);
+    await this.notifyOwnerOfApplication(created);
+    return created;
+  }
+
+  /**
+   * O codigo pode ser usado? Formato, nenhum outro afiliado com ele (link ou
+   * cupom) e nenhum promotion code ATIVO com o mesmo texto na Stripe (ex.: um
+   * cupom de campanha). Falha ao consultar a Stripe nao recusa aqui: a
+   * aprovacao confere de novo e la a falha bloqueia.
+   */
+  async checkCode(raw: string, exceptAffiliateId?: string): Promise<{ available: boolean; reason?: 'invalid' | 'taken' }> {
+    const code = normalizeCode(raw);
+    if (!AFFILIATE_CODE_RE.test(code)) return { available: false, reason: 'invalid' };
+    const clash = await this.prisma.affiliate.findFirst({
+      where: {
+        ...(exceptAffiliateId ? { id: { not: exceptAffiliateId } } : {}),
+        OR: [{ referralCode: code }, { couponCode: code }],
+      },
+      select: { id: true },
+    });
+    if (clash) return { available: false, reason: 'taken' };
+    try {
+      if (await this.stripeActivePromotionWith(code)) return { available: false, reason: 'taken' };
+    } catch (error) {
+      this.logger.warn(`[affiliate] Checagem do codigo ${code} na Stripe falhou: ${error instanceof Error ? error.message : error}`);
+    }
+    return { available: true };
+  }
+
+  private codeRefused(code: string, reason?: 'invalid' | 'taken') {
+    return reason === 'invalid'
+      ? new BadRequestException({ code: 'affiliate_code_invalid', message: 'Use 4 to 20 letters (A to Z) or numbers.' })
+      : new ConflictException({ code: 'affiliate_code_taken', message: `${code} is already in use. Try another code.` });
+  }
+
+  /** Promotion code ATIVO com este texto na Stripe (a busca da Stripe ignora maiusculas). Sem Stripe, false. */
+  private async stripeActivePromotionWith(code: string, ignoreId?: string | null): Promise<boolean> {
+    if (!this.stripe) return false;
+    const found = await this.stripe.promotionCodes.list({ code, active: true, limit: 5 });
+    return found.data.some((p) => p.code.toUpperCase() === code && p.id !== ignoreId);
+  }
+
+  /**
+   * Aviso ao dono (support@): nome, e-mail, codigo, o que a pessoa contou e o
+   * link do /admin. Teto por hora no AdminAudit; envio recusado devolve a
+   * vaga. Nunca lanca: aviso falho nao derruba o pedido.
+   */
+  private async notifyOwnerOfApplication(affiliate: {
+    id: string;
+    userId: string;
+    couponCode: string;
+    applicationPlatform: string | null;
+    applicationUrl: string | null;
+    applicationAudience: string | null;
+    applicationNote: string | null;
+  }): Promise<boolean> {
+    try {
+      const recent = await this.prisma.adminAudit.count({
+        where: { action: AUDIT_APPLICATION_NOTIFY, createdAt: { gte: new Date(Date.now() - HOUR_MS) } },
+      });
+      if (recent >= OWNER_NOTIFY_PER_HOUR) {
+        this.logger.warn(`[affiliate] Teto de ${OWNER_NOTIFY_PER_HOUR} avisos por hora atingido; pedido ${affiliate.id} so no /admin.`);
+        return false;
+      }
+      const user = await this.prisma.user.findUnique({ where: { id: affiliate.userId }, select: { email: true, name: true } });
+      const audit = await this.prisma.adminAudit.create({
+        select: { id: true },
+        data: { action: AUDIT_APPLICATION_NOTIFY, targetUserId: affiliate.userId, details: { affiliateId: affiliate.id } },
+      });
+      const sent = await this.mail.sendAffiliateApplicationNotify(
+        process.env.FOUNDER_CHAT_NOTIFY_TO?.trim() || 'support@tickrify.com',
+        {
+          name: user?.name ?? null,
+          email: user?.email ?? null,
+          code: affiliate.couponCode,
+          platform: affiliate.applicationPlatform,
+          url: affiliate.applicationUrl,
+          audience: affiliate.applicationAudience,
+          note: affiliate.applicationNote,
+        },
+      );
+      if (!sent) {
+        await this.prisma.adminAudit.delete({ where: { id: audit.id } }).catch(() => undefined);
+        this.logger.warn(`[affiliate] Aviso do pedido ${affiliate.id} recusado pelo e-mail; fica so no /admin.`);
+      }
+      return sent;
+    } catch (error) {
+      this.logger.warn(`[affiliate] Aviso do pedido ${affiliate.id} falhou: ${error instanceof Error ? error.message : error}`);
+      return false;
+    }
   }
 
   async getDashboard(userId: string, now = new Date()) {
@@ -801,6 +907,9 @@ export class AffiliatesService implements OnModuleInit {
     if (affiliate.status === 'PENDING' || affiliate.status === 'REJECTED') {
       return { affiliate: { status: affiliate.status, joinedAt: affiliate.createdAt }, program: await this.getProgram() };
     }
+
+    // Boas-vindas que a Resend recusou na aprovacao: tenta de novo aqui.
+    if (affiliate.status === 'ACTIVE') await this.retryWelcome(affiliate.id, affiliate.userId);
 
     await this.releaseMatured(now, affiliate.id);
     const [clicks, signups, paidCustomers, sums, openSums, commissions, payouts] = await Promise.all([
@@ -1003,7 +1112,15 @@ export class AffiliatesService implements OnModuleInit {
     };
   }
 
-  /** Aprovar/recusar/suspender/reativar, taxa individual e codigos. Tudo auditado. */
+  /**
+   * Aprovar/recusar/suspender/reativar, taxa individual e codigos. Tudo auditado.
+   *
+   * Aprovar (e trocar o codigo de cupom de quem esta ACTIVE) e ESTRITO
+   * (23/11/2026): o promotion code tem que nascer na Stripe antes de qualquer
+   * gravacao. Se a Stripe recusar, ou faltar STRIPE_AFFILIATE_COUPON_ID, nada
+   * muda e o erro diz o motivo. Na troca, o codigo antigo e desativado na
+   * Stripe; as vendas antigas seguem atribuidas (o vinculo e pelo afiliado).
+   */
   async adminUpdate(
     id: string,
     patch: { status?: AffiliateStatus; commissionRateBps?: number; referralCode?: string; couponCode?: string },
@@ -1033,8 +1150,43 @@ export class AffiliatesService implements OnModuleInit {
       data[field] = value;
     }
 
-    const updated = await this.prisma.affiliate.update({ where: { id }, data });
-    const stripeSync = await this.syncPromotionCode(updated);
+    const nextStatus = (data.status as AffiliateStatus | undefined) ?? (current.status as AffiliateStatus);
+    const nextCoupon = (data.couponCode as string | undefined) ?? current.couponCode;
+    const approving = data.status === 'ACTIVE' && (current.status === 'PENDING' || current.status === 'REJECTED');
+    const strict = nextStatus === 'ACTIVE' && (approving || nextCoupon !== current.couponCode);
+
+    let updated: AffiliateRow;
+    let stripeSync: 'ok' | 'skipped' | 'failed';
+    if (strict) {
+      let promotionId: string;
+      try {
+        promotionId = await this.activatePromotionCode({ ...current, couponCode: nextCoupon });
+      } catch (error) {
+        await this.prisma.adminAudit.create({
+          data: {
+            action: 'affiliate_stripe_refused',
+            actorUserId,
+            targetUserId: current.userId,
+            details: { affiliateId: id, code: nextCoupon, reason: error instanceof Error ? error.message : String(error) },
+          },
+        });
+        throw error;
+      }
+      try {
+        updated = await this.prisma.affiliate.update({ where: { id }, data: { ...data, stripePromotionCodeId: promotionId } });
+      } catch (error) {
+        if (promotionId !== current.stripePromotionCodeId) await this.deactivatePromotion(promotionId);
+        throw error;
+      }
+      if (current.stripePromotionCodeId && current.stripePromotionCodeId !== promotionId) {
+        await this.deactivatePromotion(current.stripePromotionCodeId);
+      }
+      stripeSync = 'ok';
+    } else {
+      updated = await this.prisma.affiliate.update({ where: { id }, data });
+      stripeSync = await this.syncPromotionCode(updated);
+    }
+
     await this.prisma.adminAudit.create({
       data: {
         action: 'affiliate_update',
@@ -1053,7 +1205,116 @@ export class AffiliatesService implements OnModuleInit {
         },
       },
     });
+    if (approving) {
+      this.logger.log(`[affiliate] Afiliado ${id} aprovado com o codigo ${nextCoupon}.`);
+      await this.sendWelcomeOnce(id);
+    }
     return { affiliate: updated, stripeSync };
+  }
+
+  // ── E-mail de boas-vindas ─────────────────────────────────────────────────
+
+  /**
+   * Boas-vindas do afiliado aprovado, UMA vez (AdminAudit `affiliate_welcome_sent`,
+   * gravado antes de enviar). Envio recusado tira a marca e deixa
+   * `affiliate_welcome_retry`: o painel do afiliado tenta de novo na proxima
+   * visita. Nunca lanca.
+   */
+  async sendWelcomeOnce(affiliateId: string): Promise<boolean> {
+    try {
+      const affiliate = await this.prisma.affiliate.findUnique({
+        where: { id: affiliateId },
+        include: { user: { select: { email: true, name: true } } },
+      });
+      if (!affiliate || affiliate.status !== 'ACTIVE') return false;
+      const already = await this.prisma.adminAudit.findFirst({
+        where: { action: AUDIT_WELCOME_SENT, targetUserId: affiliate.userId },
+        select: { id: true },
+      });
+      if (already) return false;
+
+      const email = affiliate.user?.email;
+      const [discountPercent, weeklyPriceUsd] = await Promise.all([this.customerDiscountPercent(), this.weeklyPriceUsd()]);
+      if (!email || discountPercent === null || weeklyPriceUsd === null) {
+        this.logger.warn(
+          `[affiliate] Boas-vindas de ${affiliateId} adiadas: ${!email ? 'sem e-mail' : discountPercent === null ? 'cupom sem desconto legivel' : 'preco semanal ilegivel'}.`,
+        );
+        await this.markWelcomeRetry(affiliate.userId);
+        return false;
+      }
+
+      const mark = await this.prisma.adminAudit.create({
+        select: { id: true },
+        data: { action: AUDIT_WELCOME_SENT, targetUserId: affiliate.userId, targetEmail: email, details: { affiliateId } },
+      });
+      const app = (process.env.FRONTEND_URL || 'https://tickrify.com').replace(/\/+$/, '');
+      const rendered = renderAffiliateWelcome(await this.languageOf(affiliate.userId), {
+        firstName: affiliate.user?.name,
+        code: affiliate.couponCode,
+        link: `${app}/?ref=${affiliate.referralCode}`,
+        dashboardLink: `${app}/affiliate`,
+        discountPercent,
+        ratePercent: affiliate.commissionRateBps / 100,
+        months: AFFILIATE_RULES.commissionMonths,
+        holdDays: AFFILIATE_RULES.holdDays,
+        minPayoutUsd: AFFILIATE_RULES.minPayoutCents / 100,
+        weeklyPriceUsd,
+      });
+      const sent = await this.mail.sendAffiliateWelcome(email, rendered);
+      if (!sent) {
+        await this.prisma.adminAudit.delete({ where: { id: mark.id } }).catch(() => undefined);
+        await this.markWelcomeRetry(affiliate.userId);
+        this.logger.warn(`[affiliate] Boas-vindas de ${affiliateId} recusadas; sem marca, tenta de novo na visita ao painel.`);
+        return false;
+      }
+      await this.prisma.adminAudit.deleteMany({ where: { action: AUDIT_WELCOME_RETRY, targetUserId: affiliate.userId } });
+      this.logger.log(`[affiliate] Boas-vindas enviadas para ${affiliateId}.`);
+      return true;
+    } catch (error) {
+      this.logger.warn(`[affiliate] Boas-vindas de ${affiliateId} falharam: ${error instanceof Error ? error.message : error}`);
+      return false;
+    }
+  }
+
+  /** So quem tem a marca de nova tentativa: afiliado antigo (antes de 23/11) nunca recebe boas-vindas atrasadas. */
+  private async retryWelcome(affiliateId: string, userId: string): Promise<void> {
+    const pending = await this.prisma.adminAudit
+      .findFirst({ where: { action: AUDIT_WELCOME_RETRY, targetUserId: userId }, select: { id: true } })
+      .catch(() => null);
+    if (pending) await this.sendWelcomeOnce(affiliateId);
+  }
+
+  private async markWelcomeRetry(userId: string): Promise<void> {
+    const exists = await this.prisma.adminAudit.findFirst({ where: { action: AUDIT_WELCOME_RETRY, targetUserId: userId }, select: { id: true } });
+    if (!exists) await this.prisma.adminAudit.create({ data: { action: AUDIT_WELCOME_RETRY, targetUserId: userId } });
+  }
+
+  /** Lingua do perfil (coluna so por SQL, ver auth.controller). Fora das 6 do site, ingles. */
+  private async languageOf(userId: string) {
+    try {
+      const rows = await this.prisma.$queryRawUnsafe<Array<{ languagePreference: string | null }>>(
+        'SELECT "languagePreference" FROM "tickrify"."User" WHERE "id" = $1',
+        userId,
+      );
+      return affiliateWelcomeLanguage(rows[0]?.languagePreference);
+    } catch {
+      return affiliateWelcomeLanguage(null);
+    }
+  }
+
+  /** Preco do plano semanal em USD, lido do price da Stripe (cache de 10 min). */
+  private async weeklyPriceUsd(): Promise<number | null> {
+    if (this.weeklyPriceCache && Date.now() - this.weeklyPriceCache.at < 10 * 60 * 1000) return this.weeklyPriceCache.value;
+    const priceId = getPriceId('starter', 'weekly', 'usd');
+    if (!priceId || !this.stripe) return null;
+    try {
+      const price = await this.stripe.prices.retrieve(priceId);
+      const value = price.currency === 'usd' && typeof price.unit_amount === 'number' ? price.unit_amount / 100 : null;
+      this.weeklyPriceCache = { value, at: Date.now() };
+      return value;
+    } catch {
+      return this.weeklyPriceCache?.value ?? null;
+    }
   }
 
   /** Todos os saques (os 200 mais recentes); a tela separa pendentes de historico. */
@@ -1191,13 +1452,71 @@ export class AffiliatesService implements OnModuleInit {
   // ── Stripe: promotion code do afiliado ───────────────────────────────────
 
   /**
-   * Mantem o promotion code da Stripe igual ao `couponCode` e ao status:
-   * codigo novo cria outro e desativa o antigo; suspenso fica inativo.
-   * Falha na Stripe nao bloqueia nada: o checkout cai no cupom direto.
+   * Versao ESTRITA, usada na aprovacao e na troca de codigo: devolve o id do
+   * promotion code ATIVO com `couponCode`, ou lanca com o motivo. O que ja
+   * existe com o mesmo codigo e o mesmo cupom e so reativado.
+   */
+  private async activatePromotionCode(affiliate: AffiliateRow): Promise<string> {
+    const couponId = this.affiliateCouponId();
+    if (!couponId) {
+      throw new BadRequestException({
+        code: 'affiliate_coupon_missing',
+        message:
+          'Falta STRIPE_AFFILIATE_COUPON_ID no Render. Crie na Stripe um cupom de 10%, duracao "once", e ponha o id dele nessa variavel antes de aprovar.',
+      });
+    }
+    if (!this.stripe) throw new ServiceUnavailableException('Stripe nao configurada (STRIPE_SECRET_KEY).');
+    const code = affiliate.couponCode;
+    try {
+      if (affiliate.stripePromotionCodeId) {
+        const promo = await this.stripe.promotionCodes.retrieve(affiliate.stripePromotionCodeId);
+        const promoCoupon = typeof promo.coupon === 'string' ? promo.coupon : promo.coupon?.id;
+        if (promo.code.toUpperCase() === code && promoCoupon === couponId) {
+          if (!promo.active) await this.stripe.promotionCodes.update(promo.id, { active: true });
+          return promo.id;
+        }
+      }
+      if (await this.stripeActivePromotionWith(code, affiliate.stripePromotionCodeId)) {
+        throw new ConflictException({
+          code: 'affiliate_code_taken',
+          message: `Ja existe um codigo promocional ${code} ativo na Stripe. Escolha outro codigo.`,
+        });
+      }
+      const created = await this.stripe.promotionCodes.create({
+        coupon: couponId,
+        code,
+        active: true,
+        metadata: { affiliateId: affiliate.id },
+        restrictions: { first_time_transaction: true },
+      });
+      return created.id;
+    } catch (error) {
+      if (error instanceof HttpException) throw error;
+      const reason = error instanceof Error ? error.message : String(error);
+      this.logger.error(`[affiliate] Stripe recusou o codigo ${code} de ${affiliate.id}: ${reason}`);
+      throw new BadRequestException({ code: 'affiliate_stripe_refused', message: `A Stripe recusou o codigo ${code}: ${reason}` });
+    }
+  }
+
+  private async deactivatePromotion(promotionId: string): Promise<void> {
+    if (!this.stripe) return;
+    try {
+      await this.stripe.promotionCodes.update(promotionId, { active: false });
+    } catch (error) {
+      this.logger.error(`[affiliate] Nao consegui desativar ${promotionId} na Stripe: ${error instanceof Error ? error.message : error}`);
+    }
+  }
+
+  /**
+   * Versao TOLERANTE (boot, suspender, reativar, editar pedido pendente):
+   * mantem o promotion code igual ao `couponCode` e ao status; suspenso fica
+   * inativo. Falha na Stripe nao bloqueia nada: o checkout cai no cupom direto.
    */
   private async syncPromotionCode(affiliate: AffiliateRow): Promise<'ok' | 'skipped' | 'failed'> {
     const couponId = this.affiliateCouponId();
     if (!couponId || !this.stripe) return 'skipped';
+    // Pedido PENDING ou recusado nao reserva codigo na Stripe.
+    if (!affiliate.stripePromotionCodeId && affiliate.status !== 'ACTIVE') return 'skipped';
     const active = affiliate.status === 'ACTIVE';
     try {
       if (affiliate.stripePromotionCodeId) {

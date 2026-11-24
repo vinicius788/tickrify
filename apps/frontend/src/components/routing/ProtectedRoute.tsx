@@ -1,5 +1,5 @@
 import { useAuth } from "@clerk/clerk-react";
-import { Navigate } from "react-router-dom";
+import { Navigate, useLocation } from "react-router-dom";
 import { ReactNode, useEffect, useLayoutEffect } from "react";
 import BrandLoader from "../ui/BrandLoader";
 import { setPageTranslatable } from "@/lib/utils";
@@ -11,6 +11,7 @@ interface ProtectedRouteProps {
 
 const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
   const { isLoaded, isSignedIn, getToken, userId } = useAuth();
+  const location = useLocation();
 
   // Toda rota protegida e area logada (/dashboard, /demo, /admin, /affiliate):
   // sem traducao automatica enquanto ela estiver montada. Ver setPageTranslatable.
@@ -37,8 +38,10 @@ const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
     return <BrandLoader />;
   }
 
+  // Volta para a MESMA tela depois do login (ex.: afiliado que abriu /affiliate
+  // pelo link do e-mail). O Clerk so aceita destino deste site.
   if (!isSignedIn) {
-    return <Navigate to="/sign-in" replace />;
+    return <Navigate to={`/sign-in?redirect_url=${encodeURIComponent(location.pathname + location.search)}`} replace />;
   }
 
   return <>{children}</>;

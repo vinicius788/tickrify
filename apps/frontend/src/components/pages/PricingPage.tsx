@@ -4,16 +4,12 @@ import { PricingCards } from '@/components/pricing/PricingCards';
 import TestimonialsSection from '@/components/landing/TestimonialsSection';
 import { seoFor, useJsonLd, useSeo } from '@/hooks/useSeo';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
-import { useFoundingOffer, useLocalPrices } from '@/hooks/useFoundingOffer';
-import { interpolate } from '@/lib/i18n';
 
 
 
 export default function PricingPage() {
-  const { t, language } = useLanguage();
+  const { t } = useLanguage();
   const copy = t.pricingPage;
-  const local = useLocalPrices(language);
-  const foundingOffer = useFoundingOffer();
 
   // Intenção transacional pura, e até 10/08/2026 esta página servia o title e
   // a description do home, então não podia rankear para "pricing" nem para o
@@ -74,22 +70,6 @@ export default function PricingPage() {
           <p>{copy.subtitle}</p>
         </div>
       </section>
-
-      {/* Fecha a promessa do banner do topo do site. Âmbar porque é status,
-          não decoração: é a mesma cor que o produto usa para AGUARDA.
-          Some junto com o cupom: sem EARLY35 ativo na Stripe, não há oferta. */}
-      {foundingOffer && (
-        <section className="site-dark site-body-tight">
-          <div className="site-wrap">
-            <div className="site-founding">
-              <span className="site-eyebrow">{copy.foundingTitle}</span>
-              <p>
-                {copy.foundingDesc} <b>{copy.foundingCode}</b> {interpolate(copy.foundingSuffix, local.params)}
-              </p>
-            </div>
-          </div>
-        </section>
-      )}
 
       <section className="site-light">
         <div className="site-wrap">

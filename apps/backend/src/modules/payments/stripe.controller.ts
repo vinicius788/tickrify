@@ -81,14 +81,11 @@ export class StripeController {
     // caminho para price legado nenhum.
     const localCurrency = isChargeCurrency(body.localCurrency) ? body.localCurrency : 'usd';
 
-    const coupon = body.coupon === 'EARLY35' ? body.coupon : undefined;
-
     return this.stripeService.createCheckoutSession(
       user.clerkUserId,
       planType,
       billingCycle,
       currency,
-      coupon,
       body.source,
       adsContextFrom(body, req),
       body.affiliateCode && body.affiliateKind
@@ -156,18 +153,6 @@ export class StripeController {
    * handleWebhookEvent — rota aberta, corpo autenticado. Sem assinatura válida
    * o serviço rejeita antes de tocar o banco.
    */
-  /**
-   * Oferta Founding Trader para a vitrine. Publica porque a /pricing e a home
-   * mostram (ou escondem) a oferta para quem nao esta logado. Nao expoe nada
-   * alem de "existe, qual codigo, quantos por cento".
-   */
-  @Public()
-  @Get('offer')
-  @Throttle({ default: { limit: 60, ttl: 60_000 } })
-  getOffer() {
-    return this.stripeService.getFoundingOffer();
-  }
-
   /**
    * Oferta Founding Member de UM link pessoal. Publica porque quem abre o link
    * pode estar sem login. O codigo tem 8 caracteres sorteados (~1 trilhao de

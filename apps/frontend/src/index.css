@@ -574,8 +574,6 @@ a.site-stat:hover .site-stat-n { color: #fff; }
 .site-price-amt { display: flex; align-items: baseline; gap: 8px; margin: 6px 0 4px; }
 .site-price-amt b { font-size: 3.2rem; font-weight: 400; letter-spacing: -0.04em; line-height: 1; font-variant-numeric: tabular-nums; }
 .site-price-amt span { font-family: var(--font-mono); font-size: 12px; color: var(--s-on-light-2); }
-.site-price-amt s { font-size: 1.15rem; color: var(--s-on-light-2); font-variant-numeric: tabular-nums; }
-.site-price-then { font-family: var(--font-mono); font-size: 11.5px; color: var(--s-on-light-2); margin-bottom: 6px; }
 .site-price ul { list-style: none; margin: 26px 0; display: grid; gap: 12px; padding: 0; }
 .site-price li { display: flex; gap: 11px; font-size: 14px; color: var(--s-on-light); }
 .site-price li svg { flex: 0 0 auto; margin-top: 4px; }
@@ -601,14 +599,6 @@ a.site-stat:hover .site-stat-n { color: #fff; }
 .site-closer { text-align: center; }
 .site-closer h2 { max-width: 19ch; margin: 0 auto 22px; }
 .site-closer p { max-width: 44ch; margin: 0 auto 32px; }
-
-/* ---- faixa Founding Trader ---- */
-.site-banner { border-bottom: 1px solid var(--s-hair); background: rgba(255, 255, 255, 0.03); }
-.site-banner > .site-wrap { display: flex; align-items: center; justify-content: center; gap: 12px; padding-top: 11px; padding-bottom: 11px; position: relative; }
-.site-banner p { font-family: var(--font-mono); font-size: 11.5px; letter-spacing: 0.04em; color: var(--s-fg-2); text-align: center; }
-.site-banner a { color: var(--s-fg); border-bottom: 1px solid rgba(255, 255, 255, 0.3); }
-.site-banner button { position: absolute; right: var(--s-pad); color: var(--s-fg-3); display: grid; place-items: center; }
-.site-banner button:hover { color: var(--s-fg); }
 
 /* ---- demonstração do painel (3 leituras) ---- */
 .site-demo { border: 1px solid var(--s-hair); border-radius: 16px; overflow: hidden; background: #0b0c0e; box-shadow: 0 40px 90px -50px rgba(0, 0, 0, 0.6); }
@@ -747,13 +737,6 @@ a.site-stat:hover .site-stat-n { color: #fff; }
 @media (prefers-reduced-motion: reduce) { .site-spin { animation: none; border-top-color: var(--s-fg-2); } }
 
 /* ---- /pricing ---- */
-.site-founding { border: 1px solid rgba(217, 162, 27, 0.28); border-radius: 14px; padding: 22px 24px; max-width: 640px; }
-.site-founding .site-eyebrow { color: var(--s-wait); }
-.site-founding p { margin-top: 10px; font-size: 13.5px; line-height: 1.7; color: var(--s-fg-2); }
-.site-founding b {
-  font-family: var(--font-mono); font-weight: 400; color: var(--s-wait);
-  border: 1px solid rgba(217, 162, 27, 0.34); border-radius: 6px; padding: 2px 7px;
-}
 .site-cycle { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-bottom: 34px; scroll-margin-top: 84px; }
 .site-cycle .site-btn { max-width: 100%; white-space: normal; text-align: center; }
 .site-plans { display: grid; gap: 20px; }

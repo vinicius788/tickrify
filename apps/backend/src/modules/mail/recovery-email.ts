@@ -20,13 +20,10 @@
 import type { PrismaClient } from '@prisma/client';
 import { fetchClerkEmail } from '../../common/utils/clerk-email';
 import { getFreeQuota } from '../../common/free-quota';
-import type { FoundingOffer } from '../payments/founding-offer';
 
 export type RecoveryEmailDeps = {
   prisma: Pick<PrismaClient, 'adminAudit' | 'user' | 'analysis'>;
-  mail: { sendRecovery(to: string, offer?: FoundingOffer | null): Promise<boolean> };
-  /** Oferta EARLY35 no momento do envio; o cupom so entra no e-mail se ativo. */
-  foundingOffer(): Promise<FoundingOffer>;
+  mail: { sendRecovery(to: string): Promise<boolean> };
   hasPaidAccess(userId: string): Promise<boolean>;
   log(level: 'log' | 'warn', message: string): void;
 };
@@ -69,11 +66,7 @@ export async function sendRecoveryEmailOnce(deps: RecoveryEmailDeps, userId: str
       },
     });
 
-    // Falha ao consultar a oferta tira so a oferta, nunca o e-mail.
-    const offer = await Promise.resolve()
-      .then(() => deps.foundingOffer())
-      .catch(() => null);
-    const ok = await deps.mail.sendRecovery(email, offer?.active ? offer : null);
+    const ok = await deps.mail.sendRecovery(email);
     if (!ok) {
       await deps.prisma.adminAudit.delete({ where: { id: audit.id } }).catch(() => undefined);
       deps.log('warn', `[recovery] Envio recusado (userId=${userId}); sem marca, a varredura tenta de novo.`);

@@ -1677,7 +1677,6 @@ export class AiService implements OnModuleInit {
       prisma: this.prisma,
       mail: this.mailService,
       hasPaidAccess: (id) => this.hasPaidAccess(id),
-      foundingOffer: () => this.stripeService.getFoundingOffer(),
       log: (level, message) => (level === 'warn' ? this.logger.warn(message) : this.logger.log(message)),
     };
   }
