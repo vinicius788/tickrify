@@ -29,7 +29,7 @@ import { useLanguage } from '@/lib/i18n/LanguageContext';
  * sumir sozinha depois de salvar.
  */
 
-const TIMEFRAMES = ['1m', '5m', '15m', '30m', '1h', '4h', '1d', '1w'] as const;
+export const TIMEFRAMES = ['1m', '5m', '15m', '30m', '1h', '4h', '1d', '1w'] as const;
 const SESSIONS = ['asian', 'london', 'new_york', 'overlap'] as const;
 const INSTRUMENTS = ['crypto', 'forex', 'metals', 'indices', 'stocks'] as const;
 const SETUPS = ['breakout', 'pullback', 'reversal', 'range', 'trend_continuation'] as const;

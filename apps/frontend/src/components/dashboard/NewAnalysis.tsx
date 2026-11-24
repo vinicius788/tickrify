@@ -6,6 +6,7 @@ import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { track } from '@/lib/analytics';
 import { shrinkChartImage } from '@/lib/chart-image';
 import { CHART_ACCEPT, MAX_CHART_BYTES, chartFileError } from '@/lib/chart-upload';
+import { TIMEFRAMES } from './StrategyProfile';
 
 interface NewAnalysisProps {
   onStartAnalysis: (
@@ -71,7 +72,8 @@ const SetupUpdateBanner = ({ context, deep }: { context: SetupUpdateContext; dee
 );
 
 /** Prints extras por papel (top-down): 0 = tempo maior (direcao), 1 = tempo do meio (setup). */
-type ExtraChart = { file: File; url: string } | null;
+/** `tf`: tempo que a pessoa marcou no print (so para o aviso; nao vai ao motor). */
+type ExtraChart = { file: File; url: string; tf: string | null } | null;
 const EXTRA_SLOTS = ['direction', 'setup'] as const;
 
 function fileToDataUrl(file: File): Promise<string> {
@@ -148,7 +150,7 @@ const NewAnalysis = ({ onStartAnalysis, allowHigherTimeframes = true, setupUpdat
     if (!file) return;
     const error = chartFileError(file);
     setFileError(error);
-    if (!error) setSlot(slot, { file, url: URL.createObjectURL(file) });
+    if (!error) setSlot(slot, { file, url: URL.createObjectURL(file), tf: null });
   };
 
   const addHtf = (slot: number) => (e: ChangeEvent<HTMLInputElement>) => {
@@ -171,6 +173,12 @@ const NewAnalysis = ({ onStartAnalysis, allowHigherTimeframes = true, setupUpdat
     setHintTimeframe(tf);
     onAssetHintChange?.(symbol && tf ? { symbol, timeframe: tf } : null);
   };
+
+  // Aviso leve (nao bloqueia): print extra marcado num tempo menor que o do principal.
+  // O tempo do principal so e conhecido pela dica de ativo.
+  const tfRank = (tf: string | null | undefined) => TIMEFRAMES.indexOf(tf as (typeof TIMEFRAMES)[number]);
+  const mainRank = hintSymbol ? tfRank(hintTimeframe ?? assetChoices?.timeframe) : -1;
+  const lowerTfExtra = mainRank >= 0 && extraCharts.some((h) => h.tf !== null && tfRank(h.tf) >= 0 && tfRank(h.tf) < mainRank);
 
   // Chegou com o ativo no endereco: marca uma vez, quando a lista da pessoa carrega.
   const [initialApplied, setInitialApplied] = useState(false);
@@ -478,11 +486,36 @@ const NewAnalysis = ({ onStartAnalysis, allowHigherTimeframes = true, setupUpdat
                         <p className="mt-0.5 text-xs leading-relaxed text-[var(--text-secondary)]">
                           {role === 'direction' ? u.directionChartHint : u.setupChartHint}
                         </p>
+                        {h ? (
+                          <div key="tf" role="group" aria-label={`${u.extraTimeframeLabel}: ${label}`} className="mt-2 flex flex-wrap gap-1">
+                            {TIMEFRAMES.map((tf) => (
+                              <button
+                                key={tf}
+                                type="button"
+                                aria-pressed={h.tf === tf}
+                                onClick={() => setSlot(i, { ...h, tf: h.tf === tf ? null : tf })}
+                                className={`rounded-full border px-2 py-0.5 text-[11px] transition-colors ${
+                                  h.tf === tf
+                                    ? 'border-transparent bg-[var(--fill-5)] text-[var(--text-primary)]'
+                                    : 'border-[var(--border-default)] text-[var(--text-secondary)] hover:bg-[var(--fill-2)]'
+                                }`}
+                              >
+                                {tf}
+                              </button>
+                            ))}
+                          </div>
+                        ) : null}
                       </div>
                     </div>
                   );
                 })}
               </div>
+
+              {lowerTfExtra ? (
+                <p key="lower-tf-warning" role="status" className="mt-2 text-xs leading-relaxed text-[var(--text-secondary)]">
+                  {u.lowerTfWarning}
+                </p>
+              ) : null}
 
               <div className="mt-3">
                 <button

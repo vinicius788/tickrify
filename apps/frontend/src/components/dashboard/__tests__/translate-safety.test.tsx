@@ -70,7 +70,7 @@ describe('painel com a pagina traduzida pelo navegador', () => {
   it.each(['pt', 'en', 'es', 'fr', 'de', 'ja'] as const)('guia dos prints extras abre e fecha com a pagina traduzida (%s)', async (lang) => {
     window.localStorage.setItem('tickrify-language', lang);
     const u = getTranslations(lang).analysis.upload;
-    for (const key of ['mainChartHint', 'directionChart', 'directionChartHint', 'setupChart', 'setupChartHint', 'optional', 'guideTitle', 'guideIntro', 'guideExamplesTitle', 'guideSingle'] as const) {
+    for (const key of ['mainChartHint', 'directionChart', 'directionChartHint', 'setupChart', 'setupChartHint', 'optional', 'guideTitle', 'guideIntro', 'guideExamplesTitle', 'guideSingle', 'extraTimeframeLabel', 'lowerTfWarning'] as const) {
       expect(u[key].trim().length).toBeGreaterThan(0);
       expect(u[key]).not.toMatch(/\u2014/);
     }

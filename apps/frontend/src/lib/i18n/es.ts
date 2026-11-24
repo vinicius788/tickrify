@@ -528,6 +528,8 @@ export default {
       guideExamplesTitle: "Ejemplos:",
       guideExamples: ["Entrada en 5m: 4H para dirección, 1H para setup", "Entrada en 15m: 4H para dirección, 1H para setup", "Entrada en 1H: Diario para dirección, 4H para setup"],
       guideSingle: "¿Solo un gráfico? No pasa nada. Tickrify ya revisa una temporalidad mayor con datos reales del mercado cuando están disponibles.",
+      extraTimeframeLabel: "Temporalidad de este gráfico",
+      lowerTfWarning: "Los gráficos extra funcionan mejor en temporalidades mayores que la de tu gráfico de entrada.",
       dragOrClick: 'Arrastra o haz clic',
       analyze: 'Analizar gráfico',
       analyzing: 'Analizando…',

@@ -528,6 +528,8 @@ export default {
       guideExamplesTitle: "Exemples :",
       guideExamples: ["Entrée en 5m : 4H pour la direction, 1H pour le setup", "Entrée en 15m : 4H pour la direction, 1H pour le setup", "Entrée en 1H : Daily pour la direction, 4H pour le setup"],
       guideSingle: "Un seul graphique ? Pas de problème. Tickrify vérifie déjà une unité de temps supérieure avec les données réelles du marché quand elles sont disponibles.",
+      extraTimeframeLabel: "Unité de temps de ce graphique",
+      lowerTfWarning: "Les graphiques en plus fonctionnent mieux sur des unités de temps supérieures à celle de votre graphique d'entrée.",
       dragOrClick: 'Glissez ou cliquez',
       analyze: 'Analyser le graphique',
       analyzing: 'Analyse…',

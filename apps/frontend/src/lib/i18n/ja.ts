@@ -528,6 +528,8 @@ export default {
       guideExamplesTitle: "例：",
       guideExamples: ["5分足エントリー：方向は4時間足、セットアップは1時間足", "15分足エントリー：方向は4時間足、セットアップは1時間足", "1時間足エントリー：方向は日足、セットアップは4時間足"],
       guideSingle: "チャートが1枚だけでも大丈夫です。データがある場合、Tickrifyはリアルな市場データで上位足も自動で確認します。",
+      extraTimeframeLabel: "このチャートの時間足",
+      lowerTfWarning: "追加チャートは、エントリー用チャートより上位の時間足で使うと効果的です。",
       dragOrClick: 'ドラッグまたはクリック',
       analyze: 'チャートを分析',
       analyzing: '分析中…',

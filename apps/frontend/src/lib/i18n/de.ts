@@ -528,6 +528,8 @@ export default {
       guideExamplesTitle: "Beispiele:",
       guideExamples: ["5m-Einstieg: 4H für die Richtung, 1H für das Setup", "15m-Einstieg: 4H für die Richtung, 1H für das Setup", "1H-Einstieg: Daily für die Richtung, 4H für das Setup"],
       guideSingle: "Nur ein Chart? Kein Problem. Tickrify prüft bereits einen höheren Timeframe mit echten Marktdaten, wenn sie verfügbar sind.",
+      extraTimeframeLabel: "Timeframe dieses Charts",
+      lowerTfWarning: "Zusätzliche Charts funktionieren am besten auf höheren Timeframes als dein Einstiegs-Chart.",
       dragOrClick: 'Ziehen oder klicken',
       analyze: 'Chart analysieren',
       analyzing: 'Analysiere…',

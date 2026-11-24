@@ -280,7 +280,7 @@ Detalhe completo de cada item: `_local/CLAUDE-historico-ate-2026-11-23.md`.
   (`Analysis.watchEntry`).
 - **My assets** (`watch-assets.ts`): niveis do dia sem IA, alerta nos niveis
   (sem setup). Quiz de conta nova (`OnboardingQuiz.tsx`).
-- **Prints extras da nova analise** (`NewAnalysis.tsx`, 24/11, so assinante): espacos fixos por papel (direcao, setup), guia recolhivel `upload_guide_opened`, `analysis_started.extra_charts`.
+- **Prints extras da nova analise** (`NewAnalysis.tsx`, 24/11, so assinante): espacos fixos por papel (direcao, setup), guia recolhivel `upload_guide_opened`, `analysis_started.extra_charts`; tempo marcado no extra (nao vai ao motor) avisa se menor que o da dica de ativo.
 - **Estado da operacao** (`TradeState`) e modo gerenciamento (chamada separada).
 - **Chat com o fundador** (`modules/support`, feito em casa, polling).
 - **Trial** em `common/trial.ts`; anti-abuso (e-mail descartavel, 3 por IP/24h,

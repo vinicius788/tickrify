@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { track } from '@/lib/analytics';
 import NewAnalysis from '../NewAnalysis';
@@ -125,6 +125,42 @@ describe('chart upload validation', () => {
       expect(screen.getByText('Top-down analysis with 2 charts')).toBeTruthy();
       expect(screen.getByRole('img', { name: 'Middle timeframe: setup' })).toBeTruthy();
       expect(screen.getByLabelText('Higher timeframe: direction')).toBeTruthy();
+    });
+
+    describe('aviso de tempo menor que o do principal', () => {
+      const choices = { symbols: ['XAUUSD'], timeframe: '1h', timeframes: ['5m', '15m', '1h', '4h'] };
+      const openWithHint = async (withHint: boolean) => {
+        render(<LanguageProvider><NewAnalysis onStartAnalysis={start} assetChoices={choices} /></LanguageProvider>);
+        drop(file('image/png'));
+        await screen.findByText('Your entry chart');
+        if (withHint) fireEvent.click(screen.getByRole('button', { name: 'XAUUSD' }));
+        fireEvent.change(screen.getByLabelText('Higher timeframe: direction'), { target: { files: [file('image/png')] } });
+        return within(screen.getByRole('group', { name: 'Timeframe of this chart: Higher timeframe: direction' }));
+      };
+      const warning = 'Extra charts work best on higher timeframes than your entry chart.';
+
+      it('aparece com extra menor que o principal, some ao corrigir e nao bloqueia o envio', async () => {
+        const chips = await openWithHint(true);
+        expect(screen.queryByText(warning)).toBeNull();
+        fireEvent.click(chips.getByRole('button', { name: '15m' }));
+        expect(screen.getByText(warning)).toBeTruthy();
+        fireEvent.click(chips.getByRole('button', { name: '4h' }));
+        expect(screen.queryByText(warning)).toBeNull();
+        fireEvent.click(chips.getByRole('button', { name: '5m' }));
+        expect((screen.getByRole('button', { name: 'Analyze chart' }) as HTMLButtonElement).disabled).toBe(false);
+      });
+
+      it('mesmo tempo do principal nao avisa', async () => {
+        const chips = await openWithHint(true);
+        fireEvent.click(chips.getByRole('button', { name: '1h' }));
+        expect(screen.queryByText(warning)).toBeNull();
+      });
+
+      it('sem o tempo do principal (sem dica de ativo) nao avisa', async () => {
+        const chips = await openWithHint(false);
+        fireEvent.click(chips.getByRole('button', { name: '5m' }));
+        expect(screen.queryByText(warning)).toBeNull();
+      });
     });
 
     it('sem acesso a prints extras, nada disso aparece', async () => {
