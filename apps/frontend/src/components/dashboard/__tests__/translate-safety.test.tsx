@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import NewAnalysis from '@/components/dashboard/NewAnalysis';
 import ProtectedRoute from '@/components/routing/ProtectedRoute';
 import { LanguageProvider } from '@/lib/i18n/LanguageContext';
+import { getTranslations } from '@/lib/i18n';
 
 vi.mock('@clerk/clerk-react', () => ({
   useAuth: () => ({ isLoaded: true, isSignedIn: true }),
@@ -64,6 +65,38 @@ describe('painel com a pagina traduzida pelo navegador', () => {
     });
 
     expect(screen.getByRole('heading', { level: 3 })).toBeTruthy();
+  });
+
+  it.each(['pt', 'en', 'es', 'fr', 'de', 'ja'] as const)('guia dos prints extras abre e fecha com a pagina traduzida (%s)', async (lang) => {
+    window.localStorage.setItem('tickrify-language', lang);
+    const u = getTranslations(lang).analysis.upload;
+    for (const key of ['mainChartHint', 'directionChart', 'directionChartHint', 'setupChart', 'setupChartHint', 'optional', 'guideTitle', 'guideIntro', 'guideExamplesTitle', 'guideSingle'] as const) {
+      expect(u[key].trim().length).toBeGreaterThan(0);
+      expect(u[key]).not.toMatch(/\u2014/);
+    }
+    expect(u.guideExamples).toHaveLength(3);
+    URL.createObjectURL = vi.fn(() => 'blob:chart');
+    const { container } = render(
+      <LanguageProvider>
+        <NewAnalysis onStartAnalysis={() => undefined} />
+      </LanguageProvider>,
+    );
+    const drop = dragEvent();
+    Object.defineProperty(drop.dataTransfer.files[0], 'arrayBuffer', { value: async () => new ArrayBuffer(1) });
+    await act(async () => {
+      fireEvent.drop(container.querySelector('[role="presentation"]')!, drop);
+    });
+    const toggle = await screen.findByRole('button', { name: u.guideTitle });
+    simulateGoogleTranslate(container);
+    await act(async () => {
+      fireEvent.click(toggle);
+    });
+    expect(screen.getByText(u.guideSingle)).toBeTruthy();
+    simulateGoogleTranslate(container);
+    await act(async () => {
+      fireEvent.click(toggle);
+    });
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
   });
 
   it('area logada desliga a traducao do navegador e devolve ao sair', () => {

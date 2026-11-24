@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { track } from '@/lib/analytics';
 import NewAnalysis from '../NewAnalysis';
 import { LanguageProvider } from '@/lib/i18n/LanguageContext';
 import { MAX_CHART_BYTES } from '@/lib/chart-upload';
@@ -36,17 +37,17 @@ describe('chart upload validation', () => {
     expect(start).not.toHaveBeenCalled();
     drop(file('image/png'));
     await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
-    expect(screen.getByText('Main chart (execution timeframe)')).toBeTruthy();
+    expect(screen.getByText('Your entry chart')).toBeTruthy();
   });
 
   it('timeframe maior rejeitado informa limite e preserva o grafico principal', async () => {
     render(<LanguageProvider><NewAnalysis onStartAnalysis={start} /></LanguageProvider>);
     drop(file('image/png'));
-    await screen.findByText('Main chart (execution timeframe)');
+    await screen.findByText('Your entry chart');
     fireEvent.change(document.querySelector('input[type="file"]')!, { target: { files: [file('image/png', MAX_CHART_BYTES + 1)] } });
     expect(screen.getByRole('alert').textContent).toContain('10 MB');
     expect(start).not.toHaveBeenCalled();
-    expect(screen.getByText('Main chart (execution timeframe)')).toBeTruthy();
+    expect(screen.getByText('Your entry chart')).toBeTruthy();
   });
 
   describe('qual ativo e este (lista do My assets)', () => {
@@ -55,13 +56,13 @@ describe('chart upload validation', () => {
     const open = async (props: Record<string, unknown> = {}) => {
       render(<LanguageProvider><NewAnalysis onStartAnalysis={start} assetChoices={choices} onAssetHintChange={onHint} {...props} /></LanguageProvider>);
       drop(file('image/png'));
-      await screen.findByText('Main chart (execution timeframe)');
+      await screen.findByText('Your entry chart');
     };
 
     it('sem lista, a pergunta nao aparece', async () => {
       render(<LanguageProvider><NewAnalysis onStartAnalysis={start} /></LanguageProvider>);
       drop(file('image/png'));
-      await screen.findByText('Main chart (execution timeframe)');
+      await screen.findByText('Your entry chart');
       expect(screen.queryByText('Which asset is this? (optional)')).toBeNull();
     });
 
@@ -82,6 +83,56 @@ describe('chart upload validation', () => {
       fireEvent.click(screen.getByRole('button', { name: 'BTCUSDT' }));
       fireEvent.click(screen.getByRole('button', { name: 'Change' }));
       expect(onHint).toHaveBeenLastCalledWith(null);
+    });
+  });
+
+  describe('prints extras por papel (top-down)', () => {
+    const open = async () => {
+      render(<LanguageProvider><NewAnalysis onStartAnalysis={start} /></LanguageProvider>);
+      drop(file('image/png'));
+      await screen.findByText('Your entry chart');
+    };
+
+    it('os 3 espacos tem rotulo e dica', async () => {
+      await open();
+      expect(screen.getByText("The timeframe you'll trade. Your plan (entry, stop, target) comes from this one.")).toBeTruthy();
+      expect(screen.getByText('Higher timeframe: direction')).toBeTruthy();
+      expect(screen.getByText('About 4 to 6 times your entry timeframe or more. Example: 4H for a 5m entry.')).toBeTruthy();
+      expect(screen.getByText('Middle timeframe: setup')).toBeTruthy();
+      expect(screen.getByText('Between the two. Example: 1H for a 5m entry.')).toBeTruthy();
+    });
+
+    it('o guia comeca fechado, abre e fecha com um clique e conta so a abertura', async () => {
+      await open();
+      const toggle = screen.getByRole('button', { name: 'How to choose your charts' });
+      expect(toggle.getAttribute('aria-expanded')).toBe('false');
+      expect(screen.queryByText('5m entry: 4H for direction, 1H for setup')).toBeNull();
+      fireEvent.click(toggle);
+      expect(toggle.getAttribute('aria-expanded')).toBe('true');
+      expect(screen.getByText('1H entry: Daily for direction, 4H for setup')).toBeTruthy();
+      expect(screen.getByText(/already checks a higher timeframe from live market data when it's available/)).toBeTruthy();
+      fireEvent.click(toggle);
+      expect(screen.queryByText('5m entry: 4H for direction, 1H for setup')).toBeNull();
+      expect(vi.mocked(track).mock.calls.filter(([name]) => name === 'upload_guide_opened')).toHaveLength(1);
+    });
+
+    it('cada print extra vai na ordem do papel, e tirar o de direcao nao muda o do setup', async () => {
+      await open();
+      fireEvent.change(screen.getByLabelText('Middle timeframe: setup'), { target: { files: [file('image/png')] } });
+      fireEvent.change(screen.getByLabelText('Higher timeframe: direction'), { target: { files: [file('image/png')] } });
+      expect(screen.getByText('Top-down analysis with 3 charts')).toBeTruthy();
+      fireEvent.click(screen.getAllByRole('button', { name: 'Remove' })[0]);
+      expect(screen.getByText('Top-down analysis with 2 charts')).toBeTruthy();
+      expect(screen.getByRole('img', { name: 'Middle timeframe: setup' })).toBeTruthy();
+      expect(screen.getByLabelText('Higher timeframe: direction')).toBeTruthy();
+    });
+
+    it('sem acesso a prints extras, nada disso aparece', async () => {
+      render(<LanguageProvider><NewAnalysis onStartAnalysis={start} allowHigherTimeframes={false} /></LanguageProvider>);
+      drop(file('image/png'));
+      await screen.findByText('Your entry chart');
+      expect(screen.queryByText('Higher timeframe: direction')).toBeNull();
+      expect(screen.queryByRole('button', { name: 'How to choose your charts' })).toBeNull();
     });
   });
 });

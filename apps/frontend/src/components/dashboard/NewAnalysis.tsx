@@ -1,6 +1,6 @@
 import { useDropzone } from 'react-dropzone';
 import { Card } from '@/components/ui/card';
-import { UploadCloud, X, Plus, Layers, Info } from 'lucide-react';
+import { UploadCloud, X, Plus, Layers, Info, ChevronDown } from 'lucide-react';
 import { useCallback, useEffect, useState, type ChangeEvent } from 'react';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { track } from '@/lib/analytics';
@@ -70,7 +70,9 @@ const SetupUpdateBanner = ({ context, deep }: { context: SetupUpdateContext; dee
   </Card>
 );
 
-const MAX_HTF = 2;
+/** Prints extras por papel (top-down): 0 = tempo maior (direcao), 1 = tempo do meio (setup). */
+type ExtraChart = { file: File; url: string } | null;
+const EXTRA_SLOTS = ['direction', 'setup'] as const;
 
 function fileToDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -86,7 +88,8 @@ const NewAnalysis = ({ onStartAnalysis, allowHigherTimeframes = true, setupUpdat
   const u = t.analysis.upload;
   const [mainFile, setMainFile] = useState<File | null>(null);
   const [mainPreview, setMainPreview] = useState<string | null>(null);
-  const [htf, setHtf] = useState<Array<{ file: File; url: string }>>([]);
+  const [htf, setHtf] = useState<ExtraChart[]>([null, null]);
+  const [guideOpen, setGuideOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [deep, setDeep] = useState(false);
 
@@ -139,21 +142,26 @@ const NewAnalysis = ({ onStartAnalysis, allowHigherTimeframes = true, setupUpdat
     maxSize: MAX_CHART_BYTES,
   });
 
-  const pushHtf = (file: File | undefined | null) => {
+  const setSlot = (slot: number, value: ExtraChart) => setHtf((prev) => prev.map((h, i) => (i === slot ? value : h)));
+
+  const pushHtf = (slot: number, file: File | undefined | null) => {
     if (!file) return;
     const error = chartFileError(file);
     setFileError(error);
-    if (!error && htf.length < MAX_HTF) {
-      setHtf((prev) => [...prev, { file, url: URL.createObjectURL(file) }]);
-    }
+    if (!error) setSlot(slot, { file, url: URL.createObjectURL(file) });
   };
 
-  const addHtf = (e: ChangeEvent<HTMLInputElement>) => {
-    pushHtf(e.target.files?.[0]);
+  const addHtf = (slot: number) => (e: ChangeEvent<HTMLInputElement>) => {
+    pushHtf(slot, e.target.files?.[0]);
     e.target.value = '';
   };
 
-  const removeHtf = (i: number) => setHtf((prev) => prev.filter((_, idx) => idx !== i));
+  const extraCharts = htf.filter((h): h is NonNullable<ExtraChart> => h !== null);
+
+  const toggleGuide = () => {
+    if (!guideOpen) track('upload_guide_opened');
+    setGuideOpen(!guideOpen);
+  };
 
   const [hintSymbol, setHintSymbol] = useState<string | null>(null);
   const [hintTimeframe, setHintTimeframe] = useState<string | null>(null);
@@ -177,7 +185,7 @@ const NewAnalysis = ({ onStartAnalysis, allowHigherTimeframes = true, setupUpdat
     chooseHint(null);
     setMainFile(null);
     setMainPreview(null);
-    setHtf([]);
+    setHtf([null, null]);
     setFileError(null);
     setReadError(false);
   };
@@ -190,7 +198,7 @@ const NewAnalysis = ({ onStartAnalysis, allowHigherTimeframes = true, setupUpdat
       // o que ainda soma +33% em cima do arquivo. Reduzir antes vale o dobro.
       const [shrunkMain, ...shrunkHtf] = await Promise.all([
         shrinkChartImage(mainFile),
-        ...htf.map((h) => shrinkChartImage(h.file)),
+        ...extraCharts.map((h) => shrinkChartImage(h.file)),
       ]);
       const htfBase64 = await Promise.all(shrunkHtf.map(fileToDataUrl));
       onStartAnalysis(mainPreview, shrunkMain, htfBase64, deep ? 'deep' : 'quick');
@@ -360,7 +368,10 @@ const NewAnalysis = ({ onStartAnalysis, allowHigherTimeframes = true, setupUpdat
         <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col">
           {/* Gráfico principal */}
           <div className="mb-2 flex items-center justify-between">
-            <span className="tk-display text-base text-[var(--text-primary)]">{u.mainChart}</span>
+            <span className="flex flex-col">
+              <span className="tk-display text-base text-[var(--text-primary)]">{u.mainChart}</span>
+              <span className="text-xs text-[var(--text-secondary)]">{u.mainChartHint}</span>
+            </span>
             <button
               type="button"
               onClick={reset}
@@ -427,36 +438,74 @@ const NewAnalysis = ({ onStartAnalysis, allowHigherTimeframes = true, setupUpdat
                 <Layers className="h-4 w-4 text-[var(--signal-buy)]" />
                 {u.higherTfs} <span className="font-normal text-[var(--text-secondary)]">({u.higherTfsTag})</span>
               </p>
-              <p className="mt-0.5 text-xs text-[var(--text-secondary)]">{u.higherTfsHint}</p>
 
-              <div className="mt-3 flex flex-wrap gap-3">
-                {htf.map((h, i) => (
-                  <div key={i} className="relative h-20 w-28 overflow-hidden rounded-md border border-[var(--border-subtle)] bg-[var(--bg-base)]">
-                    <img src={h.url} alt={t.interfaceExtras.higherTimeframe.replace('{number}', String(i + 1))} className="h-full w-full object-contain" />
-                    <button
-                      type="button"
-                      onClick={() => removeHtf(i)}
-                      className="absolute right-1 top-1 inline-flex h-5 w-5 items-center justify-center rounded-full bg-[var(--bg-overlay)] text-[var(--signal-sell)]"
-                      aria-label={t.demoUi.remove}
-                    >
-                      <X className="h-3 w-3" />
-                    </button>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                {EXTRA_SLOTS.map((role, i) => {
+                  const h = htf[i];
+                  const label = role === 'direction' ? u.directionChart : u.setupChart;
+                  return (
+                    <div key={role} className="flex gap-3 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-3">
+                      {h ? (
+                        <div className="relative h-20 w-28 shrink-0 overflow-hidden rounded-md border border-[var(--border-subtle)] bg-[var(--bg-base)]">
+                          <img src={h.url} alt={label} className="h-full w-full object-contain" />
+                          <button
+                            type="button"
+                            onClick={() => setSlot(i, null)}
+                            className="absolute right-1 top-1 inline-flex h-5 w-5 items-center justify-center rounded-full bg-[var(--bg-overlay)] text-[var(--signal-sell)]"
+                            aria-label={t.demoUi.remove}
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </div>
+                      ) : (
+                        <label
+                          onDragOver={(e) => e.preventDefault()}
+                          onDrop={(e) => {
+                            e.preventDefault();
+                            pushHtf(i, e.dataTransfer.files?.[0]);
+                          }}
+                          className="flex h-20 w-28 shrink-0 cursor-pointer flex-col items-center justify-center gap-1 rounded-md border border-dashed border-[var(--border-default)] text-[var(--text-secondary)] transition-colors hover:border-[var(--signal-buy-border)] hover:text-[var(--text-primary)]"
+                        >
+                          <Plus className="h-5 w-5" />
+                          <span className="text-[10px]">{u.dragOrClick}</span>
+                          <input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" aria-label={label} onChange={addHtf(i)} />
+                        </label>
+                      )}
+                      <div className="min-w-0">
+                        <p className="text-[13px] font-semibold text-[var(--text-primary)]">
+                          {label} <span className="font-normal text-[var(--text-secondary)]">({u.optional})</span>
+                        </p>
+                        <p className="mt-0.5 text-xs leading-relaxed text-[var(--text-secondary)]">
+                          {role === 'direction' ? u.directionChartHint : u.setupChartHint}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="mt-3">
+                <button
+                  type="button"
+                  aria-expanded={guideOpen}
+                  onClick={toggleGuide}
+                  className="flex items-center gap-1 text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                >
+                  <span>{u.guideTitle}</span>
+                  <ChevronDown className={`h-3.5 w-3.5 transition-transform ${guideOpen ? 'rotate-180' : ''}`} />
+                </button>
+                {guideOpen ? (
+                  <div key="guide" className="mt-2 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 py-2.5 text-xs leading-relaxed text-[var(--text-secondary)]">
+                    <p>{u.guideIntro}</p>
+                    <p className="mt-2 font-medium text-[var(--text-primary)]">{u.guideExamplesTitle}</p>
+                    <ul className="mt-1 flex flex-col gap-0.5 tabular-nums">
+                      {u.guideExamples.map((line) => (
+                        <li key={line}>{line}</li>
+                      ))}
+                    </ul>
+                    <p className="mt-2">{u.guideSingle}</p>
                   </div>
-                ))}
-                {htf.length < MAX_HTF && (
-                  <label
-                    onDragOver={(e) => e.preventDefault()}
-                    onDrop={(e) => {
-                      e.preventDefault();
-                      pushHtf(e.dataTransfer.files?.[0]);
-                    }}
-                    className="flex h-20 w-28 cursor-pointer flex-col items-center justify-center gap-1 rounded-md border border-dashed border-[var(--border-default)] text-[var(--text-secondary)] transition-colors hover:border-[var(--signal-buy-border)] hover:text-[var(--text-primary)]"
-                  >
-                    <Plus className="h-5 w-5" />
-                    <span className="text-[10px]">{u.dragOrClick}</span>
-                    <input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={addHtf} />
-                  </label>
-                )}
+                ) : null}
               </div>
             </div>
           )}
@@ -491,7 +540,7 @@ const NewAnalysis = ({ onStartAnalysis, allowHigherTimeframes = true, setupUpdat
             </button>
             {allowHigherTimeframes && (
               <p className="mt-2 text-center text-[11px] text-[var(--text-secondary)]">
-                {htf.length > 0 ? `${u.topDownPrefix} ${htf.length + 1} ${u.charts}` : u.singleHint}
+                {extraCharts.length > 0 ? `${u.topDownPrefix} ${extraCharts.length + 1} ${u.charts}` : u.singleHint}
               </p>
             )}
           </div>

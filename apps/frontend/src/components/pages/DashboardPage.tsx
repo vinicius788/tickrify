@@ -899,6 +899,7 @@ const DashboardPage = () => {
         analysisNumber,
         analysisNumberSource,
         freeRemainingBefore: isUnlimited || !Number.isFinite(remaining) ? null : remaining,
+        extra_charts: htfBase64Images.length,
       });
 
       const uploadStartedAt = performance.now();

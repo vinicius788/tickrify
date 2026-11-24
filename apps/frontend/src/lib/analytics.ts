@@ -371,6 +371,8 @@ export type FunnelEvent =
   // pasta na nuvem). A pessoa ve o aviso na tela; sem este evento, nao vemos.
   // `surface`: dashboard | try.
   | 'upload_read_failed'
+  // Abriu o "How to choose your charts" na tela de nova analise (prints extras, 24/11/2026).
+  | 'upload_guide_opened'
   // Card de compartilhamento: `step` diz onde a pessoa parou
   // (opened | copied | downloaded | x_opened | native_shared | video_downloaded),
   // `card` = read | trade, `format` = post | feed | story. O card de trade leva

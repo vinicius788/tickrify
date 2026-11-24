@@ -482,6 +482,7 @@ describe('DashboardPage', () => {
     await waitFor(() => expect(mockTrack.mock.calls.some(isMine)).toBe(true));
 
     const started = mockTrack.mock.calls.filter(([name]) => name === 'analysis_started').at(-1);
+    expect(started?.[1]).toEqual(expect.objectContaining({ extra_charts: 0 }));
     for (const last of [started, mockTrack.mock.calls.find(isMine)]) {
       expect(last?.[1]).toEqual(expect.objectContaining({
         analysisNumber: expected,
