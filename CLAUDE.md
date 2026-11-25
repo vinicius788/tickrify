@@ -63,6 +63,9 @@
   --environment jsdom` + build). Backend: `pnpm test` (jest) e `tsc --noEmit` em
   `apps/backend`. **O build do Render NAO checa tipo** (14/09: backend que nao
   compilava ficou ~3h no ar).
+- Teste do backend nao sai da maquina: `apps/backend/jest.setup.js` zera as chaves de
+  IA (o Prisma le o `.env` local) e recusa `fetch` externo. Antes, o adapter chamava a
+  Anthropic de verdade em todo `pnpm test` (25/11).
 - Gancho `pre-push` (`.githooks/pre-push`) roda tudo isso; liga com
   `git config core.hooksPath .githooks`. `--no-verify` so com motivo (Actions do
   repo privado: 2.000 min/mes).
