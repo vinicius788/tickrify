@@ -21,6 +21,8 @@ type Detail = {
   id: string; createdAt: string; status: string; errorCode: string | null; recommendation: string | null; promptVer: number | null; model: string | null;
   imageUrl: string | null; user: { id: string; email: string | null }; result: Result | null; groundingStats: unknown;
   track: { status: string; outcome: string | null; touched: boolean; filled: boolean; reason: string | null; mfeR: number | null; maeR: number | null } | null;
+  /** Ausente em backend antigo. */
+  questions?: { id: string; question: string; answer: string; provider: string | null; model: string | null; costUsd: number | null; ms: number | null; createdAt: string }[];
 };
 
 const EN = getTranslations('en');
@@ -207,6 +209,22 @@ function Analise({ id, onUsuario }: { id: string; onUsuario: (userId: string) =>
               </dl>
             ) : (
               <p className="text-sm text-[var(--text-faint)]">Ainda sem linha no rastreador (a janela pode estar aberta).</p>
+            )}
+          </Painel>
+
+          <Painel titulo="Perguntas do trader">
+            {d.questions?.length ? (
+              <ol className="space-y-3">
+                {d.questions.map((q) => (
+                  <li key={q.id} className="text-sm">
+                    <p className="font-medium text-[var(--text-primary)]">{q.question}</p>
+                    <p className="mt-1 whitespace-pre-wrap text-[var(--text-soft)]">{q.answer}</p>
+                    <p className="mt-1 text-[11px] text-[var(--text-faint)]">{`${dataHora(q.createdAt)} · ${q.model ?? q.provider ?? '-'} · ${seg(q.ms)} · ${usd(q.costUsd, 4)}`}</p>
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <p className="text-sm text-[var(--text-faint)]">Nenhuma pergunta nesta análise.</p>
             )}
           </Painel>
 

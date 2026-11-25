@@ -144,6 +144,9 @@ function makeApiClient(overrides: Record<string, unknown> = {}) {
     listOpenTrades: vi.fn().mockResolvedValue({ trades: [] }),
     matchTrade: vi.fn().mockResolvedValue({ symbol: null, matches: [] }),
     getTrade: vi.fn().mockRejectedValue(new Error('not tracked in this test')),
+    // "Ask about this analysis" tem teste proprio; aqui a caixa fica escondida.
+    listQuestions: vi.fn().mockRejectedValue(new Error('not tested here')),
+    askQuestion: vi.fn(),
     ...overrides,
   };
 }

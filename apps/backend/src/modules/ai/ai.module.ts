@@ -13,11 +13,13 @@ import { PaymentsModule } from '../payments/payments.module';
 
 import { WatchAssetsController } from './watch-assets.controller';
 import { WatchAssetsService } from './watch-assets.service';
+import { AnalysisQuestionsController } from './analysis-questions.controller';
+import { AnalysisQuestionsService } from './analysis-questions.service';
 
 @Module({
   imports: [TicksModule, PaymentsModule],
-  controllers: [AiController, SetupsController, TradesController, WatchAssetsController],
-  providers: [AiService, AIAdapter, SetupsService, SetupAlertsService, TrialService, TradesService, WatchAssetsService],
+  controllers: [AiController, SetupsController, TradesController, WatchAssetsController, AnalysisQuestionsController],
+  providers: [AiService, AIAdapter, SetupsService, SetupAlertsService, TrialService, TradesService, WatchAssetsService, AnalysisQuestionsService],
   exports: [AIAdapter, AiService, TrialService],
 })
 export class AiModule {}

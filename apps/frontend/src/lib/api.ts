@@ -314,6 +314,21 @@ export interface AIAnalysisResponse {
   updatedAt: string;
 }
 
+/** "Ask about this analysis": uma pergunta respondida. */
+export interface AnalysisQuestion {
+  id: string;
+  question: string;
+  answer: string;
+  createdAt: string;
+}
+
+export interface AnalysisQuestionsState {
+  items: AnalysisQuestion[];
+  /** Menor dos dois tetos (por analise e por dia). */
+  remaining: number;
+  perAnalysis: number;
+}
+
 export type CodeSummaryAction = 'buy_now' | 'sell_now' | 'buy_pullback' | 'sell_pullback' | 'buy_breakout' | 'sell_breakout' | 'wait';
 
 export interface CodeSummary {
@@ -1060,6 +1075,40 @@ class APIClient {
     return response.json();
   }
 
+  async listQuestions(analysisId: string, token: string | null, getFreshToken?: FreshTokenGetter): Promise<AnalysisQuestionsState> {
+    const response = await this.request(
+      `/api/ai/analysis/${analysisId}/questions`,
+      { method: 'GET', headers: this.getAuthHeader(token) },
+      'Failed to load questions',
+      APIClient.REQUEST_TIMEOUT_MS,
+      getFreshToken,
+    );
+    if (!response.ok) throw await this.buildApiError(response, 'Failed to load questions');
+    return response.json();
+  }
+
+  async askQuestion(
+    analysisId: string,
+    question: string,
+    token: string | null,
+    getFreshToken?: FreshTokenGetter,
+  ): Promise<{ item: AnalysisQuestion; remaining: number; perAnalysis: number }> {
+    const response = await this.request(
+      `/api/ai/analysis/${analysisId}/questions`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...this.getAuthHeader(token) },
+        body: JSON.stringify({ question }),
+      },
+      'Failed to ask',
+      // Teto do servidor e 15 s; folga para a rede.
+      25_000,
+      getFreshToken,
+    );
+    if (!response.ok) throw await this.buildApiError(response, 'Failed to ask');
+    return response.json();
+  }
+
   async setTradeNote(
     analysisId: string,
     body: TradeNote,
@@ -1377,6 +1426,16 @@ export function useAPIClient() {
     return apiClient.setFavorite(analysisId, isFavorite, token, getFreshToken);
   }, [getFreshToken, getInitialToken]);
 
+  const listQuestions = useCallback(async (analysisId: string) => {
+    const token = await getInitialToken();
+    return apiClient.listQuestions(analysisId, token, getFreshToken);
+  }, [getFreshToken, getInitialToken]);
+
+  const askQuestion = useCallback(async (analysisId: string, question: string) => {
+    const token = await getInitialToken();
+    return apiClient.askQuestion(analysisId, question, token, getFreshToken);
+  }, [getFreshToken, getInitialToken]);
+
   const setTradeNote = useCallback(async (analysisId: string, body: TradeNote) => {
     const token = await getInitialToken();
     return apiClient.setTradeNote(analysisId, body, token, getFreshToken);
@@ -1444,6 +1503,8 @@ export function useAPIClient() {
     clearWatchEntry,
     setFavorite,
     setTradeNote,
+    listQuestions,
+    askQuestion,
     getStrategy,
     saveStrategy,
     waitForAnalysisCompletion,
@@ -1452,5 +1513,5 @@ export function useAPIClient() {
     checkTrade,
     listOpenTrades,
     matchTrade,
-  }), [createAnalysis, getAnalysis, listAnalyses, getJournal, getAnalysisUsage, syncUserProfile, setAcquisitionSource, setTechnicalAttribution, setOutcome, setFavorite, setTradeNote, getStrategy, saveStrategy, waitForAnalysisCompletion, getTrade, markTrade, checkTrade, listOpenTrades, matchTrade]);
+  }), [createAnalysis, getAnalysis, listAnalyses, getJournal, getAnalysisUsage, syncUserProfile, setAcquisitionSource, setTechnicalAttribution, setOutcome, setWatchEntry, clearWatchEntry, setFavorite, setTradeNote, listQuestions, askQuestion, getStrategy, saveStrategy, waitForAnalysisCompletion, getTrade, markTrade, checkTrade, listOpenTrades, matchTrade]);
 }

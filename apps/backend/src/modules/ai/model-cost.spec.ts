@@ -69,6 +69,13 @@ describe('computeCost', () => {
     expect(computeCost('gpt-5.6-terra', ceiling, 3).overBudget).toBe(false);
   });
 
+  it('chamada sem tick (eixo, pergunta) nunca marca custo acima da receita', () => {
+    const c = computeCost('claude-haiku-5-5', usage, 0);
+    expect(c.costUsd).toBeGreaterThan(0);
+    expect(c.overBudget).toBe(false);
+    expect(formatCostLog('claude-haiku-5-5', 'ask_analysis', c)).not.toContain('CUSTO ACIMA');
+  });
+
   it('modelo desconhecido devolve custo null em vez de inventar preço', () => {
     const c = computeCost('modelo-que-nao-existe', usage, 1);
     expect(c.costUsd).toBeNull();

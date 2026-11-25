@@ -373,6 +373,7 @@ export type FunnelEvent =
   | 'upload_read_failed'
   // Abriu o "How to choose your charts" na tela de nova analise (prints extras, 24/11/2026).
   | 'upload_guide_opened'
+  | 'analysis_question_clicked'
   // Card de compartilhamento: `step` diz onde a pessoa parou
   // (opened | copied | downloaded | x_opened | native_shared | video_downloaded),
   // `card` = read | trade, `format` = post | feed | story. O card de trade leva

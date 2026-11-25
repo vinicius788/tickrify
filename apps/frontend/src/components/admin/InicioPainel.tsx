@@ -23,6 +23,8 @@ type Janela = {
 };
 type Inicio = {
   generatedAt: string;
+  /** "Ask about this analysis": respondidas e custo por dia UTC, mais novo primeiro. Ausente em backend antigo. */
+  questions?: { day: string; questions: number; costUsd: number }[];
   today: Janela;
   week: Janela;
   activeTrials: number;
@@ -147,6 +149,22 @@ export default function InicioPainel() {
                   />
                 </Tabela>
                 <p className="mt-2 text-[11px] text-[var(--text-faint)]">Atraso = do disparo (triggeredAt) até o envio (emailedAt). O instante exato da vela não fica na tabela.</p>
+              </Painel>
+
+              <Painel titulo="Perguntas sobre a análise" nota="Só as respondidas (falha não conta). Dia UTC.">
+                {d.questions?.length ? (
+                  <Tabela colunas={[{ rotulo: 'Dia' }, { rotulo: 'Perguntas' }, { rotulo: 'Custo' }]}>
+                    {d.questions.map((q) => (
+                      <tr key={q.day} className="border-t border-[var(--border-subtle)]">
+                        <td className="py-1.5 pr-3 tabular-nums text-[var(--text-dim)]">{q.day}</td>
+                        <td className="py-1.5 pr-3 tabular-nums">{q.questions}</td>
+                        <td className="py-1.5 tabular-nums">{usd(q.costUsd, 4)}</td>
+                      </tr>
+                    ))}
+                  </Tabela>
+                ) : (
+                  <p className="text-sm text-[var(--text-faint)]">Nenhuma pergunta nos últimos 7 dias.</p>
+                )}
               </Painel>
 
               <Painel titulo="Cota do Twelve Data" nota={t ? `Dia UTC ${t.day}, medidor em ${t.store === 'redis' ? 'Redis' : t.store}. Atualizado ${dataHora(d.generatedAt)}.` : 'Medidor indisponível.'}>

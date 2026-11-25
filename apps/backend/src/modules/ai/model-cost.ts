@@ -114,7 +114,8 @@ export function computeCost(
     ...usage,
     costUsd,
     revenueUsd,
-    overBudget: costUsd > revenueUsd,
+    // Chamada sem tick (eixo de preco, pergunta sobre a analise) nao tem receita para estourar.
+    overBudget: revenueUsd > 0 && costUsd > revenueUsd,
   };
 }
 

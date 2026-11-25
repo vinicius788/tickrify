@@ -39,6 +39,7 @@ import PaymentFailedBanner from "../dashboard/PaymentFailedBanner";
 import { TicksBadge } from "@/components/dashboard/TicksBadge";
 import { PlanUnavailableNotice } from '@/components/dashboard/PlanUnavailableNotice';
 import RatingCard from '@/components/dashboard/RatingCard';
+import AnalysisQuestions from '@/components/dashboard/AnalysisQuestions';
 import { useAnalysisLimit, useIncrementAnalysis } from "@/hooks/useAnalysisLimit";
 import { APIError, isFreeQuotaExhausted, useAPIClient, type AIAnalysisResponse } from "@/lib/api";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -1693,6 +1694,13 @@ const DashboardPage = () => {
               </div>
             ) : null}
             <AnalysisResult analysisData={analysisData} uploadedImage={uploadedImage} alertsEnabled={!isDemo && !freeLocked} base={base} />
+            {!isDemo && !freeLocked && analysisData?.id && analysisData.status === 'completed' ? (
+              <AnalysisQuestions
+                key={`ask-${analysisData.id}`}
+                analysisId={analysisData.id}
+                signalState={resolveSignalState(analysisData.fullResponse?.signalState ?? analysisData.signalState, analysisData.recommendation, analysisData.fullResponse?.analysis?.entryType, analysisData.fullResponse?.analysis?.alternativeScenario)}
+              />
+            ) : null}
             {tradeAnalysisId ? <TradePanel key={`trade-${tradeAnalysisId}`} analysisId={tradeAnalysisId} /> : null}
             {!isDemo && !freeLocked && feedbackRewardAvailable && analysisData?.status === 'completed' ? <FeedbackRewardCard source="result" /> : null}
             {/* Seguir o setup: ao lado das acoes de sempre, nunca no lugar delas. */}

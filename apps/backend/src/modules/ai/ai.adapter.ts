@@ -1534,6 +1534,37 @@ export class AIAdapter {
   }
 
   /**
+   * "Ask about this analysis" (analysis-questions.service.ts): so texto, sem
+   * imagem, no modelo mais barato (Haiku com ANTHROPIC_API_KEY, senao o quick
+   * com esforco low). Erro rapido vai ao outro provedor so dentro do mesmo teto.
+   */
+  async askAboutAnalysis(input: { instructions: string; context: string; question: string; timeoutMs: number }): Promise<VisionModelResult> {
+    const primary = (this.visionModel as Partial<FallbackVisionModel>).primary ?? this.visionModel;
+    const cheap = [primary, this.secondaryModel].find((m): m is VisionModel => m?.provider === 'anthropic') ?? primary;
+    const other = cheap === primary ? this.secondaryModel : primary;
+    const deadline = Date.now() + input.timeoutMs;
+    const request = (timeoutMs: number): VisionModelRequest => ({
+      tier: 'quick',
+      instructions: input.instructions,
+      context: [input.context],
+      userContent: [{ type: 'text', text: input.question }],
+      schemaName: 'analysis_answer',
+      schema: { type: 'object', properties: { answer: { type: 'string' } }, required: ['answer'], additionalProperties: false },
+      maxTokens: 2000,
+      reasoningEffort: 'low',
+      timeoutMs,
+    });
+    try {
+      return await cheap.complete(request(input.timeoutMs));
+    } catch (error) {
+      const left = deadline - Date.now();
+      if (!other || left < 3000) throw error;
+      this.logger.warn(`[ask] ${cheap.provider} falhou (${error instanceof Error ? error.message.slice(0, 160) : 'erro'}); usando ${other.provider}.`);
+      return other.complete(request(left));
+    }
+  }
+
+  /**
    * Monta o conteúdo da mensagem do usuário: gráfico principal + (opcional) gráficos
    * de timeframes maiores para análise top-down REAL (não inferida de um único print).
    * Cada imagem extra que falhar ao assinar é ignorada — nunca derruba a análise.

@@ -147,8 +147,12 @@ export type HomeWindow = {
   alerts: { triggered: number; armed: number; invalidated: number; notified: number; notifyDelayP50Ms: number | null; notifyDelayP90Ms: number | null };
 };
 
+/** "Ask about this analysis": perguntas respondidas e custo por dia (UTC), mais novo primeiro. */
+export type QuestionDay = { day: string; questions: number; costUsd: number };
+
 export type HomeReport = {
   generatedAt: string;
+  questions: QuestionDay[];
   today: HomeWindow;
   week: HomeWindow;
   activeTrials: number;
@@ -174,7 +178,7 @@ export async function loadHomeReport(db: RawQuerier, now: Date = new Date()): Pr
   const dayStart = startOfUtcDay(now);
   const weekStart = new Date(now.getTime() - 7 * DAY_MS);
 
-  const [analyses, signups, alerts, [trials], [subs], [active]] = await Promise.all([
+  const [analyses, signups, alerts, [trials], [subs], [active], questions] = await Promise.all([
     db.$queryRaw<HomeAnalysisRow[]>(Prisma.sql`
       SELECT a."createdAt" AS "createdAt", a."status" AS "status",
              a."result"->>'signalState' AS "signalState",
@@ -202,6 +206,12 @@ export async function loadHomeReport(db: RawQuerier, now: Date = new Date()): Pr
         FROM "tickrify"."Subscription" s JOIN "tickrify"."User" u ON u."id" = s."userId"
        WHERE s."status" = 'active' AND s."stripeId" NOT LIKE 'manual\\_%' AND u."role" <> 'admin'`),
     db.$queryRaw<Array<{ n: number }>>(Prisma.sql`SELECT COUNT(*)::int AS n FROM "tickrify"."SetupAlert" WHERE "status" = 'active'`).catch(() => [{ n: 0 }]),
+    db.$queryRaw<QuestionDay[]>(Prisma.sql`
+      SELECT to_char(date_trunc('day', "createdAt"), 'YYYY-MM-DD') AS "day",
+             COUNT(*)::int AS "questions", COALESCE(SUM("costUsd"), 0)::double precision AS "costUsd"
+        FROM "tickrify"."AnalysisQuestion"
+       WHERE "createdAt" >= ${startOfUtcDay(new Date(now.getTime() - 6 * DAY_MS))} AND "answer" IS NOT NULL
+       GROUP BY 1 ORDER BY 1 DESC`).catch(() => [] as QuestionDay[]),
   ]);
 
   const windowOf = (from: Date): HomeWindow => ({
@@ -212,6 +222,7 @@ export async function loadHomeReport(db: RawQuerier, now: Date = new Date()): Pr
 
   return {
     generatedAt: now.toISOString(),
+    questions,
     today: windowOf(dayStart),
     week: windowOf(weekStart),
     activeTrials: trials?.n ?? 0,
@@ -269,10 +280,11 @@ export type InspectorDetail = {
   result: unknown;
   groundingStats: unknown;
   track: { status: string; outcome: string | null; touched: boolean; filled: boolean; reason: string | null; mfeR: number | null; maeR: number | null } | null;
+  questions: Array<{ id: string; question: string; answer: string; provider: string | null; model: string | null; costUsd: number | null; ms: number | null; createdAt: Date }>;
 };
 
 export async function loadAnalysisDetail(db: RawQuerier, id: string): Promise<InspectorDetail | null> {
-  const [row] = await db.$queryRaw<Array<Omit<InspectorDetail, 'user' | 'track' | 'imageRef'> & { imageUrl: string | null; userId: string; email: string | null }>>(Prisma.sql`
+  const [row] = await db.$queryRaw<Array<Omit<InspectorDetail, 'user' | 'track' | 'imageRef' | 'questions'> & { imageUrl: string | null; userId: string; email: string | null }>>(Prisma.sql`
     SELECT a."id" AS "id", a."createdAt" AS "createdAt", a."status" AS "status", a."errorCode" AS "errorCode",
            a."recommendation" AS "recommendation", a."promptVer" AS "promptVer", a."model" AS "model",
            a."imageUrl" AS "imageUrl", a."result" AS "result", a."groundingStats" AS "groundingStats",
@@ -283,8 +295,12 @@ export async function loadAnalysisDetail(db: RawQuerier, id: string): Promise<In
   const [track] = await db.$queryRaw<NonNullable<InspectorDetail['track']>[]>(Prisma.sql`
     SELECT "status", "outcome", "touched", "filled", "reason", "mfeR", "maeR"
       FROM "tickrify"."AnalysisTrack" WHERE "analysisId" = ${id}`).catch(() => []);
+  const questions = await db.$queryRaw<InspectorDetail['questions']>(Prisma.sql`
+    SELECT "id", "question", "answer", "provider", "model", "costUsd", "ms", "createdAt"
+      FROM "tickrify"."AnalysisQuestion" WHERE "analysisId" = ${id} AND "answer" IS NOT NULL
+     ORDER BY "createdAt" ASC, "id" ASC`).catch(() => [] as InspectorDetail['questions']);
   const { imageUrl, userId, email, ...rest } = row;
-  return { ...rest, imageRef: imageUrl, user: { id: userId, email }, track: track ?? null };
+  return { ...rest, imageRef: imageUrl, user: { id: userId, email }, track: track ?? null, questions };
 }
 
 // ── Usuario ─────────────────────────────────────────────────────────────────
