@@ -680,7 +680,7 @@ export default {
         flipped: 'The earlier plan was invalidated by a candle close, so the direction flipped.',
         underPressure: 'The earlier plan of this setup is under pressure: its reads did not agree or the trend turned against it, so it does not set this read.',
         reasons: { neutral_direction: 'The candles show no clear direction.', conflicting_direction: 'The signals point in different directions.', no_geometry: 'No entry fits the risk rules right now.', no_majority: 'The AI reads disagreed, so this read is Wait.', against_trend: 'An entry here would go against the trend of the higher timeframe.', news_event: 'A high-impact news event is close.', stale_print: 'The chart image is old, so an entry would rest on outdated prices.', no_data: 'There is no candle data for this asset.', veto_news: 'A high-impact news event is close, so the AI vetoed the entry.', veto_structure_broken: 'The AI saw the structure break against this entry.', veto_stale_print: 'The AI flagged the chart image as outdated.', veto_not_a_chart: 'The image is not a trading chart.', veto_unclear_chart: 'The chart is too unclear to read.', veto_conflicting_signals: 'The AI found conflicting signals.' },
-        strongRead: 'Strong read', strongReadNote: 'All three readers agreed.',
+        strongRead: 'Strong read', strongReadNote: 'All three readers agreed.', readersDisagreed: "Readers disagreed; this decision comes from the candle structure.",
         breakoutBuy: 'Buy on breakout', breakoutSell: 'Sell on breakout',
         breakoutAbove: 'Enter at {entry} only after a candle closes above {level}.', breakoutBelow: 'Enter at {entry} only after a candle closes below {level}.',
       },

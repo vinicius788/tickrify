@@ -170,7 +170,7 @@ Detalhe completo de cada item: `_local/CLAUDE-historico-ate-2026-11-23.md`.
 ### 3.2 Motor de IA
 
 - **Motor pelas velas + tres leitores (23/11, PR #66) com regras
-  `filter-2026-11-23` (PR #69, `result.engine.rules`).** `ENGINE_VERSION` mora so
+  `filter-2026-11-25` (`result.engine.rules`; antes `filter-2026-11-23`, PR #69).** `ENGINE_VERSION` mora so
   em `modules/ai/engine-contract.ts` (segue 4.0.0; o marcador do motor novo e
   `result.engine.vote`).
   - Vies pelas velas em `common/utils/entry-engine.ts` (`BIAS_RULES`,
@@ -183,6 +183,10 @@ Detalhe completo de cada item: `_local/CLAUDE-historico-ate-2026-11-23.md`.
     ENTER_NOW so com 2 leitores na mesma direcao ou 1 + vies forte. Codigo nunca
     promove para ENTER_NOW. Filtro de tendencia (`against_trend`). Plano anterior
     do setup so prende com maioria ou vies forte (`priorBinding`).
+  - **filter-2026-11-25:** leitor usado com NO_TRADE limita o estado final a WATCH,
+    mesmo com vies forte (`capWatch` em `resolveVote`). Replay 23/11: ENTER_NOW 15% -> 12,5%.
+  - **Prosa e checklist do leitor que bate com a decisao final** (`pickDisplayReader`,
+    `result.engine.displayReader`); null = tela so com o `codeSummary` e "Readers disagreed".
   - IA preenche `read` (direcao + veto com motivo). Entrada pelo plano da IA se o
     validador aceita; senao `chooseEntry` (agora / recuo / rompimento; stop no
     swing a 1 ATR+, risco 0,5 a 2 ATR, TP1 a 1R+, teto 1,5R). Rompimento = WATCH
@@ -415,7 +419,7 @@ Uma linha cada. Detalhe e SQL antigos no arquivo historico (grep pela data).
   2026-11-03`; ouro/forex so depois de 09/11 14:09:48 UTC; metais/forex antes de
   03/11 17:28:26 UTC receberam o bloco EUR/USD invertido). Junto: se 3+ WATCH com
   velas tiverem `watchLevels` nulo, testar offline "WATCH sem geometria = No trade".
-- **Regras filter-2026-11-23:** com 30 trades fechados sob essas regras, R por
+- **Regras filter-2026-11-25:** com 30 trades fechados sob essas regras, R por
   trade <= -0,15R = voltar as regras do #66. Vigiar estabilidade (caiu de 80% para
   60% no replay) e % de No trade (alerta acima de 40%) na aba Motor.
 

@@ -1394,6 +1394,7 @@ export class AiService implements OnModuleInit {
         continuation: Boolean(aiResponse.continuation),
         readers: meta?.readers,
         vote: meta?.vote,
+        displayReader: meta?.displayReader,
         contract: {
           recommendation: aiResponse.recommendation,
           confidencePct: aiResponse.confidence,

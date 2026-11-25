@@ -139,6 +139,29 @@ describe('AIAdapter trade-plan integrity', () => {
     expect(vote).toMatchObject({ agreement: '1/1', strongRead: false, earlyMajority: false, decidedBy: 'single' });
   });
 
+  it('25/11: a reader with NO_TRADE caps the result at WATCH, and prose and checklist come from the reader that matches the final decision', async () => {
+    const adapter = new AIAdapter();
+    const noTrade = responseFor(110, { technicalAnalysis: 'NO TRADE PROSE', structureValidation: 'C1 FAIL: x; C2 FAIL: y. 2/7' }, { signalState: 'NO_TRADE', recommendation: 'HOLD', watchPlan: null });
+    const buy = responseFor(110, { technicalAnalysis: 'BUY PROSE' });
+    withFakeOpenAi(adapter, jest.fn().mockResolvedValueOnce(noTrade).mockResolvedValueOnce(buy));
+    withRealCandles(adapter);
+    (adapter as any).secondaryModel = null;
+
+    const result = await adapter.analyzeImage('data:image/png;base64,AA==', 'prompt', 'quick');
+    expect(result.signalState).not.toBe('ENTER_NOW');
+    const shown = result.engineMeta!.displayReader;
+    const text = JSON.stringify(result.analysis);
+    if (result.signalState === 'NO_TRADE') {
+      expect(shown).toBe('openai-1');
+      expect(text).toContain('NO TRADE PROSE');
+    } else {
+      // WATCH de compra: nenhum leitor pediu WATCH, vale o da mesma direcao.
+      expect(shown).toBe('openai-2');
+      expect(text).toContain('BUY PROSE');
+      expect(text).not.toContain('NO TRADE PROSE');
+    }
+  });
+
   it('early majority: the two first readers agree, the slow third is ignored and the vote is recorded', async () => {
     const adapter = new AIAdapter();
     withFakeOpenAi(adapter, jest.fn().mockResolvedValue(responseFor(110)));

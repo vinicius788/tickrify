@@ -1,4 +1,4 @@
-import { collectReaders, majorityOf, resolveVote, timeframeLadder, VETO_REASONS, type VetoReason } from '../../common/utils/entry-engine';
+import { collectReaders, majorityOf, pickDisplayReader, resolveVote, timeframeLadder, VETO_REASONS, type VetoReason } from '../../common/utils/entry-engine';
 import type { EngineReaderRecord, EngineVoteRecord } from './engine-contract';
 import type { ReaderRead } from '../../common/utils/signal-decision';
 import { logObservation, rawObservation, safeObserve } from '../../common/utils/analysis-observation';
@@ -2463,8 +2463,8 @@ export class AIAdapter {
           ...(realData ? { read, prior } : {}),
         };
       };
-      const decide = (run: Run, read: ReaderRead | null | undefined, extra: Pick<SignalDecisionInput, 'allowNow' | 'noMajority'> = {}) =>
-        decideSignalForProfile({ ...inputOf(run, read), ...(realData ? extra : {}) }, riskProfile);
+      const decide = (run: Run, read: ReaderRead | null | undefined, extra: Pick<SignalDecisionInput, 'allowNow' | 'noMajority' | 'capWatch'> = {}) =>
+        decideSignalForProfile({ ...inputOf(run, read), ...(realData ? extra : {}), ...(extra.capWatch ? { capWatch: true } : {}) }, riskProfile);
       // O que o leitor pediu (antes do codigo): estado do modelo e direcao da leitura ou do plano.
       const rawOf = (run: Run) => {
         const read = run.parsed.read;
@@ -2518,9 +2518,15 @@ export class AIAdapter {
       const chosen = oks[vote0.chosen];
       const decidedBy: EngineVoteRecord['decidedBy'] = vote0.decidedBy;
       const majority = decidedBy === 'majority' ? majorityOf(oks.map((o) => o.outcome)) : null;
-      const profiled = vote0.decidedBy === 'majority' || !realData
-        ? decisions.get(chosen.value)!
-        : await decide(chosen.value, vote0.tieRead ?? (vote0.noMajority ? null : chosen.value.parsed.read), { allowNow: vote0.allowNow, noMajority: vote0.noMajority });
+      // Maioria: a decisao que o leitor ja tinha. Com NO_TRADE no voto (filter-2026-11-25) e ela ENTER_NOW, decide de novo limitado a WATCH.
+      const cached = decisions.get(chosen.value)!;
+      const profiled = (vote0.decidedBy === 'majority' || !realData) && !(vote0.capWatch && cached.decision.state === 'ENTER_NOW')
+        ? cached
+        : await decide(
+          chosen.value,
+          vote0.tieRead ?? (vote0.noMajority ? null : chosen.value.parsed.read),
+          vote0.decidedBy === 'majority' || !realData ? { capWatch: true } : { allowNow: vote0.allowNow, noMajority: vote0.noMajority, capWatch: vote0.capWatch },
+        );
       const run = chosen.value;
       const { modelResult, content, parsed, parseMs, tValidation, rawRecommendation, continuation } = run;
       const readerRecords: EngineReaderRecord[] = readerModels.map((r) => {
@@ -2570,6 +2576,12 @@ export class AIAdapter {
       const strategyFitReason =
         typeof parsed.strategyFitReason === 'string' ? parsed.strategyFitReason.slice(0, 400) : null;
       const decision = profiled.decision;
+      // Prosa, checklist e estrutura do leitor que bate com a decisao final (nunca de quem pediu outra coisa).
+      const displayReader = pickDisplayReader(
+        oks.map((o) => ({ label: o.label, raw: rawOf(o.value) })),
+        { state: decision.state, direction: decisionDirection(decision) },
+      );
+      const shown = (displayReader ? oks.find((o) => o.label === displayReader)?.value : null) ?? run;
       const modelState = inputOf(run, undefined).state;
       const validationMs = Date.now() - tValidation;
       if (decision.validatorAction === 'downgraded' || decision.validatorAction === 'promoted') {
@@ -2582,7 +2594,7 @@ export class AIAdapter {
       const confidence = decision.confidence;
       const wireRecommendation: SchemaRecommendation = recommendation === 'WAIT' ? 'HOLD' : recommendation;
       const decidedAnalysis = applyDecisionToAnalysis(
-        parsed.analysis,
+        shown.parsed.analysis,
         decision,
         decision.stalePrint ? stalePrintNote(prompt) : null,
       );
@@ -2624,7 +2636,7 @@ export class AIAdapter {
         observation,
         recommendation,
         ...signal,
-        bias: parsed.analysis.marketStructure.bias,
+        bias: shown.parsed.analysis.marketStructure.bias,
         confidence,
         reasoning: presentedAnalysis.reasoning,
         analysis: presentedAnalysis,
@@ -2663,6 +2675,7 @@ export class AIAdapter {
           validationMs,
           readers: readerRecords,
           vote,
+          displayReader,
         },
       };
     } catch (error) {

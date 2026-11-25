@@ -1,4 +1,5 @@
-import { againstTrend, breakoutEntry, candleBias, chooseEntry, collectReaders, isStrongBias, majorityOf, nowEntry, pullbackEntry, resolveVote, timeframeLadder, watchPlanOf, type CandleBias, type CandleView, type ReaderVote } from './entry-engine';
+import { againstTrend, breakoutEntry, candleBias, chooseEntry, collectReaders, isStrongBias, majorityOf, nowEntry, pullbackEntry, pickDisplayReader,
+  resolveVote, timeframeLadder, watchPlanOf, type CandleBias, type CandleView, type ReaderVote } from './entry-engine';
 import { isValidWatchPlan } from './plan-engine';
 
 const up: CandleView = {
@@ -101,6 +102,43 @@ describe('collectReaders', () => {
     const r = await collectReaders([{ label: 'a', run: fail(5) }, { label: 'b', run: later(10, 'E') }, { label: 'c', run: later(15, 'E') }], out, 30);
     expect(r.done.filter((d) => d.ok)).toHaveLength(2);
     expect(r.ignored).toEqual([]);
+  });
+});
+
+describe('regra de 25/11/2026 (filter-2026-11-25): leitor com NO_TRADE limita a WATCH', () => {
+  const vote = (state: string, direction: 'long' | 'short' | null): ReaderVote => ({ raw: { state, direction }, outcome: { state, direction: direction ?? 'neutral' } });
+  const strongLong = candleBias({ ...up, rangePosPct: 50, late: null, htfTrend: 'uptrend', vsEma50: 'above', htfVsEma50: 'above' });
+
+  it('caso XAUUSD cmww3tjdx (espelhado): NO_TRADE + ENTER_NOW + WATCH com vies forte nao libera o agora', () => {
+    expect(isStrongBias(strongLong)).toBe(true);
+    const r = resolveVote([vote('NO_TRADE', null), vote('ENTER_NOW', 'long'), vote('WATCH', 'long')], strongLong);
+    expect(r).toMatchObject({ decidedBy: 'candle_bias', allowNow: false, capWatch: true });
+  });
+
+  it('maioria de ENTER_NOW com um NO_TRADE tambem fica no maximo WATCH; sem NO_TRADE nada muda', () => {
+    expect(resolveVote([vote('ENTER_NOW', 'long'), vote('ENTER_NOW', 'long'), vote('NO_TRADE', null)], strongLong))
+      .toMatchObject({ decidedBy: 'majority', chosen: 0, allowNow: false, capWatch: true });
+    const clean = resolveVote([vote('ENTER_NOW', 'long'), vote('WATCH', 'short')], strongLong);
+    expect(clean).toMatchObject({ decidedBy: 'candle_bias', allowNow: true });
+    expect(clean.capWatch).toBeUndefined();
+    expect(resolveVote([vote('NO_TRADE', null)], strongLong)).toMatchObject({ decidedBy: 'single', capWatch: true, allowNow: false });
+  });
+});
+
+describe('leitor de exibicao (25/11/2026)', () => {
+  const r = (label: string, state: string, direction: 'long' | 'short' | null) => ({ label, raw: { state, direction } });
+  const xau = [r('openai-1', 'NO_TRADE', null), r('openai-2', 'ENTER_NOW', 'short'), r('anthropic-1', 'WATCH', 'short')];
+
+  it('caso XAUUSD: decisao ENTER_NOW venda mostra o leitor que pediu ENTER_NOW venda, nunca o do NO_TRADE', () => {
+    expect(pickDisplayReader(xau, { state: 'ENTER_NOW', direction: 'short' })).toBe('openai-2');
+    expect(pickDisplayReader(xau, { state: 'WATCH', direction: 'short' })).toBe('anthropic-1');
+    expect(pickDisplayReader(xau, { state: 'NO_TRADE', direction: 'neutral' })).toBe('openai-1');
+  });
+
+  it('sem o mesmo estado vale a mesma direcao (empate, o primeiro); nenhum bate = null', () => {
+    expect(pickDisplayReader([r('a', 'WATCH', 'short'), r('b', 'ENTER_NOW', 'short')], { state: 'NO_TRADE', direction: 'neutral' })).toBeNull();
+    expect(pickDisplayReader([r('a', 'NO_TRADE', null), r('b', 'ENTER_NOW', 'short'), r('c', 'ENTER_NOW', 'short')], { state: 'WATCH', direction: 'short' })).toBe('b');
+    expect(pickDisplayReader([r('a', 'WATCH', 'long'), r('b', 'NO_TRADE', null)], { state: 'WATCH', direction: 'short' })).toBeNull();
   });
 });
 

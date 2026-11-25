@@ -40,10 +40,12 @@ describe('buildQuestionContext', () => {
     expect(ctx).toContain('Direction: long');
     expect(ctx).toContain('Data: real candles');
     expect(ctx).toContain('agreement=2/3, decidedBy=majority, allThreeAgreed=no');
-    expect(ctx).toContain('Reader openai-1: status=used, asked=WATCH, direction=long');
-    expect(ctx).toContain('Reader anthropic-1: status=failed');
+    expect(ctx).toContain('What each reader asked: reader 1: watch buy, reader 2: did not answer');
+    expect(ctx).toContain('directionTimeframeTrend=up');
+    expect(ctx).not.toContain('uptrend');
     expect(ctx).toContain('Timeframes: chart=15m, direction=4h, setup=1h');
-    expect(ctx).toContain('kind=pullback, direction=long, entry=63500, stop=63000, target1=64500, level=63500, invalidation=63000, target1R=2');
+    expect(ctx).toContain('kind=pullback, direction=long, entry=63500, stop=63000, target1=64500, level=63500, invalidation=63000');
+    expect(ctx).toContain('Entry plan reward to risk: target1=2.0R');
     expect(ctx).toContain('reason=against_trend, from=ENTER_NOW, to=WATCH');
     expect(ctx).toContain('Written summary: Price is stretched above the range.');
   });
@@ -60,6 +62,30 @@ describe('buildQuestionContext', () => {
     expect(ctx).toContain('Data: levels estimated from the screenshot only');
     expect(ctx).toContain('Old screenshot: yes');
     expect(ctx).toContain('Economic calendar: events_attached');
+  });
+});
+
+describe('caso XAUUSD de 25/11: leitores por nome simples e R de cada alvo', () => {
+  const ctx = buildQuestionContext({
+    signalState: 'ENTER_NOW',
+    analysis: { symbol: 'XAUUSD', timeframe: '5m', entry: 2650, stopLoss: 2655, takeProfit1: 2642.5, takeProfit2: 2635, riskRewardRatio: '1:3' },
+    candleBias: { direction: 'short', score: -2, htfTrend: 'downtrend' },
+    entryPlan: { kind: 'now', direction: 'short', entry: 2650, stopLoss: 2655, takeProfit1: 2642.5, takeProfit2: 2635, level: 2650, invalidation: 2655, tp1R: 1.5 },
+    engine: { readers: [
+      { label: 'openai-1', status: 'used', state: 'NO_TRADE', direction: 'neutral' },
+      { label: 'openai-2', status: 'used', state: 'ENTER_NOW', direction: 'short' },
+      { label: 'anthropic-1', status: 'used', state: 'WATCH', direction: 'short' },
+    ] },
+  }, 'SELL');
+  it('cada leitor com o que pediu, cada alvo com o seu R e a tendencia numa palavra', () => {
+    expect(ctx).toContain('What each reader asked: reader 1: no trade, reader 2: sell now, reader 3: watch sell');
+    expect(ctx).toContain('Entry plan reward to risk: target1=1.5R, target2=3.0R');
+    expect(ctx).toContain('Levels shown reward to risk: target1=1.5R, target2=3.0R');
+    expect(ctx).toContain('directionTimeframeTrend=down');
+    expect(ctx).not.toMatch(/downtrend|riskReward=|1:3/);
+  });
+  it('o prompt proibe trocar o R de um alvo pelo de outro', () => {
+    expect(ASK_SYSTEM_PROMPT).toContain('never give the R of one target as the R of another');
   });
 });
 

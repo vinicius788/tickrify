@@ -728,6 +728,18 @@ describe('motor pelas velas: regras de 23/11/2026 (filter-2026-11-23)', () => {
     expect(blocked.state).not.toBe('ENTER_NOW');
   });
 
+  it('filter-2026-11-25: com leitor NO_TRADE no voto (capWatch) nunca ENTER_NOW, pelas velas ou pelo plano da IA', async () => {
+    const free = await decideBalanced({ state: 'ENTER_NOW', recommendation: 'BUY', currentPrice: 108, watchPlan: null, realData: trendUp, read: read('long'), allowNow: true });
+    expect(free.state).toBe('ENTER_NOW');
+    const capped = await decideBalanced({ state: 'ENTER_NOW', recommendation: 'BUY', currentPrice: 108, watchPlan: null, realData: trendUp, read: read('long'), allowNow: true, capWatch: true });
+    expect(capped.state).not.toBe('ENTER_NOW');
+    expect(capped.codeSummary?.action).not.toBe('buy_now');
+    const withPlan = await decideBalanced({ state: 'ENTER_NOW', recommendation: 'BUY', currentPrice: 108, watchPlan: longPlan, realData: trendUp, read: read('long'), capWatch: true });
+    expect(withPlan.state).not.toBe('ENTER_NOW');
+    const asWatch = await decideBalanced({ state: 'WATCH', recommendation: 'WAIT', currentPrice: 108, watchPlan: longPlan, realData: trendUp, read: read('long'), capWatch: true });
+    expect(asWatch.state).not.toBe('ENTER_NOW');
+  });
+
   it('filtro de tendencia: tempo de direcao em alta e preco acima da EMA50: venda so no rompimento, nunca no recuo', async () => {
     const d = await decideBalanced({ state: 'WATCH', recommendation: 'WAIT', currentPrice: 108, watchPlan: null, realData: trendUp, read: read('short') });
     expect(['sell_pullback', 'sell_now']).not.toContain(d.codeSummary?.action);

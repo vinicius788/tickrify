@@ -1307,7 +1307,7 @@ async function processAnalysis(job: Job<JobData>) {
     // Contrato v2 + validador + tempos de cada etapa (result.engine, vai ao PostHog).
     const adapterMeta =
       aiSource && typeof aiSource === 'object' && 'engineMeta' in aiSource
-        ? (aiSource as { engineMeta?: { provider?: string; groundingMs?: number; modelMs?: number; parseMs?: number; readers?: EngineReaderRecord[]; vote?: EngineVoteRecord } }).engineMeta
+        ? (aiSource as { engineMeta?: { provider?: string; groundingMs?: number; modelMs?: number; parseMs?: number; readers?: EngineReaderRecord[]; vote?: EngineVoteRecord; displayReader?: string | null } }).engineMeta
         : undefined;
     const continuation = isRecord(aiSource) && isRecord(aiSource.continuation) ? aiSource.continuation : null;
     const engine = buildEngineRecord({
@@ -1317,6 +1317,7 @@ async function processAnalysis(job: Job<JobData>) {
       continuation: Boolean(continuation),
       readers: adapterMeta?.readers,
       vote: adapterMeta?.vote,
+      displayReader: adapterMeta?.displayReader,
       contract: {
         recommendation: parsed.recommendation === 'COMPRA' ? 'BUY' : parsed.recommendation === 'VENDA' ? 'SELL' : 'WAIT',
         confidencePct: parsed.confidence * 100,

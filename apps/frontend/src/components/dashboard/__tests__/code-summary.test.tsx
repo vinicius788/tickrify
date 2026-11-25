@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import AnalysisResult, { stripContradictingActions } from '@/components/dashboard/AnalysisResult';
@@ -103,6 +103,36 @@ describe('tela com codeSummary', () => {
     expect(summaryText).toContain('Wait. No entry fits the risk rules right now.');
     expect(summaryText).toContain('A candle close above');
     expect(screen.getByTestId('signal-state').textContent).toBe('Wait');
+  });
+
+  it('XAUUSD cmww3tjdx: nenhum leitor bate com a decisao (displayReader null): so o resumo do codigo, sem prosa nem checklist do modelo', async () => {
+    const cs = { ...base, action: 'sell_now', entry: 2650, stopLoss: 2655, takeProfit1: 2642.5 };
+    const model = { analysis: { symbol: 'XAUUSD', timeframe: '5m', currentPrice: 2650, technicalAnalysis: 'No valid entry now; wait.', executiveSummary: 'No valid entry now; wait.', structureValidation: 'C1 FAIL: a; C2 FAIL: b; C3 PASS: c. 2/7', marketStructure: { bias: 'neutral', lastStructure: 'Range without direction' } } };
+    const open = async () => fireEvent.click(screen.getByRole('button', { name: en.analysis.technicalPanel }));
+    show(fixture({ ...model, codeSummary: cs, engine: { vote: { agreement: '1/3', decidedBy: 'candle_bias' }, displayReader: null } }, 'ENTER_NOW'));
+    expect(screen.getByTestId('readers-disagreed').textContent).toBe('Readers disagreed; this decision comes from the candle structure.');
+    await open();
+    const hidden = document.body.textContent ?? '';
+    expect(hidden).not.toContain('No valid entry now');
+    expect(hidden).not.toContain('2/7');
+    expect(hidden).not.toContain('Range without direction');
+    cleanup();
+    show(fixture({ ...model, codeSummary: cs, engine: { vote: { agreement: '2/3' }, displayReader: 'openai-2' } }, 'ENTER_NOW'));
+    expect(screen.queryByTestId('readers-disagreed')).toBeNull();
+    await open();
+    expect(document.body.textContent).toContain('No valid entry now');
+    cleanup();
+    // Analise antiga (sem displayReader): nada muda.
+    show(fixture({ ...model, codeSummary: cs, engine: { vote: { agreement: '1/3' } } }, 'ENTER_NOW'));
+    expect(screen.queryByTestId('readers-disagreed')).toBeNull();
+  });
+
+  it('a linha "readers disagreed" existe nos 6 idiomas, sem travessao', () => {
+    for (const lang of [en, pt, es, fr, de, ja]) {
+      const line = (texts(lang) as unknown as { readersDisagreed: string }).readersDisagreed;
+      expect(line.length).toBeGreaterThan(10);
+      expect(line).not.toMatch(/[\u2014\u2013]/);
+    }
   });
 
   it('selo Strong read so com os 3 leitores de acordo; rompimento mostra o rotulo', () => {

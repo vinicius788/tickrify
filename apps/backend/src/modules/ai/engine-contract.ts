@@ -20,9 +20,10 @@ export const ENGINE_VERSION = '4.0.0';
  * Motor e a /accuracy separam antes e depois). filter-2026-11-23: sem maioria so
  * o vies forte desempata, ENTER_NOW so com 2 leitores ou 1 + vies forte, filtro
  * de tendencia do tempo de direcao, escada de tempos e plano anterior que so
- * prende quando nasceu de maioria ou vies forte.
+ * prende quando nasceu de maioria ou vies forte. filter-2026-11-25: as mesmas,
+ * mais leitor usado com NO_TRADE limita o estado final a WATCH.
  */
-export const ENGINE_RULES_ID = 'filter-2026-11-23';
+export const ENGINE_RULES_ID = 'filter-2026-11-25';
 
 export type EngineVerdict = 'BULLISH' | 'BEARISH' | 'NEUTRAL';
 
@@ -112,6 +113,11 @@ export interface EngineRecord {
   vote?: EngineVoteRecord;
   /** Conjunto de regras que decidiu (ENGINE_RULES_ID); ausente = antes de 23/11/2026 tarde. */
   rules?: string;
+  /**
+   * Leitor cuja prosa e checklist foram gravados (25/11/2026). null = nenhum bateu
+   * com a decisao final: a tela mostra so o resumo do codigo. Ausente = analise antiga.
+   */
+  displayReader?: string | null;
 }
 
 const MAX_KEY_REASONS = 3;
@@ -147,6 +153,7 @@ const VALIDATOR_REASON_TEXT: Record<ValidatorReason, string> = {
   levels_unverified: 'No real candles, and the plan levels or the chart price could not be read.',
   not_at_price: 'Price is not inside the area, so there is no entry at the current price.',
   news_event: 'A high-impact economic event is due within 45 minutes or came out in the last 15.',
+  reader_no_trade: 'A reader saw no trade, so the most this read can be is a watch.',
 };
 
 function clip(text: string, max: number): string {
@@ -257,6 +264,7 @@ export function buildEngineRecord(params: {
   continuation?: boolean;
   readers?: EngineReaderRecord[];
   vote?: EngineVoteRecord;
+  displayReader?: string | null;
   warn: (message: string) => void;
 }): EngineRecord {
   const built = buildEngineContract(params.contract);
@@ -274,7 +282,7 @@ export function buildEngineRecord(params: {
     validator_flags: [...params.validatorFlags],
     ...(params.continuation ? { continuation: true as const } : {}),
     ...(params.readers ? { readers: params.readers } : {}),
-    ...(params.vote ? { vote: params.vote, rules: ENGINE_RULES_ID } : {}),
+    ...(params.vote ? { vote: params.vote, rules: ENGINE_RULES_ID, displayReader: params.displayReader ?? null } : {}),
     timings: {
       image_prep_ms: ms(t.image_prep_ms),
       intake_ms: ms(t.intake_ms),

@@ -818,6 +818,8 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
   // Motor novo: o resumo e escrito pelo codigo; a prosa do modelo so vai ao painel tecnico.
   const codeSummary = isCodeSummary(fullResponse.codeSummary) ? fullResponse.codeSummary : null;
   const codeSummaryView = codeSummary ? buildCodeSummaryText(codeSummary, r.codeSummary as CodeSummaryTexts, formatPrice) : null;
+  // Nenhum leitor bateu com a decisao final (engine.displayReader null, 25/11/2026): so o resumo do codigo, sem prosa nem checklist do modelo.
+  const proseHidden = codeSummaryView !== null && asRecord(fullResponse.engine).displayReader === null;
   const executiveSummary = codeSummaryView
     ? codeSummaryView.text
     : downgradedToNoTrade ? modelSummary || r.downgradedSummary : modelSummary;
@@ -1213,6 +1215,11 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
         );
       })()}
     </div>
+    {proseHidden ? (
+      <p key="readers-disagreed" data-testid="readers-disagreed" className="text-sm leading-relaxed text-[var(--text-secondary)]">
+        <span>{r.codeSummary.readersDisagreed}</span>
+      </p>
+    ) : null}
     <WhatAISaw fullResponse={fullResponse as NonNullable<AIAnalysisResponse['fullResponse']>} formatPrice={formatPrice} />
     </div>
   );
@@ -1850,6 +1857,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
                   </AccordionContent>
                 </AccordionItem>
 
+                {!proseHidden && (<>
                 <AccordionItem value="market-structure" className="border-[var(--border-subtle)]">
                   <AccordionTrigger className="tk-display text-[15px] hover:no-underline">
                     <span className="flex items-center gap-2">
@@ -2010,8 +2018,9 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
                     )}
                   </AccordionContent>
                 </AccordionItem>
+                </>)}
 
-                {(partialExitStrategy || hasStructuredExit) && (
+                {!proseHidden && (partialExitStrategy || hasStructuredExit) && (
                   <AccordionItem value="exit-plan" className="border-[var(--border-subtle)]">
                     <AccordionTrigger className="tk-display text-[15px] hover:no-underline">
                       <span className="flex items-center gap-2">
@@ -2051,7 +2060,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
                   </AccordionItem>
                 )}
 
-                {alternativeScenario && !watchText?.planBRepeats && (
+                {!proseHidden && alternativeScenario && !watchText?.planBRepeats && (
                   <AccordionItem value="plan-b" className="border-[var(--border-subtle)]">
                     <AccordionTrigger className="tk-display text-[15px] hover:no-underline">
                       <span className="flex items-center gap-2">
@@ -2067,7 +2076,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
                   </AccordionItem>
                 )}
 
-                {whyNotOpposite && (
+                {!proseHidden && whyNotOpposite && (
                   <AccordionItem value="opposite" className="border-[var(--border-subtle)]">
                     <AccordionTrigger className="tk-display text-[15px] hover:no-underline">
                       <span className="flex items-center gap-2">

@@ -368,16 +368,24 @@ export interface VoteResolution {
   /** undefined = a decisao do leitor escolhido vale como esta (maioria). */
   allowNow?: boolean;
   noMajority?: boolean;
+  /** Algum leitor usado disse NO_TRADE: o estado final vai no maximo a WATCH (25/11/2026). */
+  capWatch?: boolean;
 }
 
 /**
- * Voto dos leitores (23/11/2026, filter-2026-11-23). Maioria (estado e direcao) =
+ * Voto dos leitores (23/11/2026, filter-2026-11-23; 25/11/2026, filter-2026-11-25:
+ * leitor usado com NO_TRADE limita o estado final a WATCH, mesmo com vies forte). Maioria (estado e direcao) =
  * a decisao dela. Sem maioria: so o vies FORTE desempata (`isStrongBias`), e o
  * agora so com 1 leitor que pediu ENTER_NOW nessa direcao; sem vies forte,
  * aguardar com "leituras divergentes". Um leitor so: a leitura dele, agora so
  * com o vies forte na mesma direcao. Nunca promove WATCH/NO_TRADE a ENTER_NOW.
  */
 export function resolveVote(votes: readonly ReaderVote[], bias: CandleBias | null): VoteResolution {
+  const vote = resolveVoteUncapped(votes, bias);
+  return votes.some((v) => v.raw.state === 'NO_TRADE') ? { ...vote, allowNow: false, capWatch: true } : vote;
+}
+
+function resolveVoteUncapped(votes: readonly ReaderVote[], bias: CandleBias | null): VoteResolution {
   const strongDir = bias && isStrongBias(bias) && bias.direction !== 'neutral' ? bias.direction : null;
   if (votes.length >= 2) {
     const majority = majorityOf(votes.map((v) => v.outcome));
@@ -397,6 +405,23 @@ export function resolveVote(votes: readonly ReaderVote[], bias: CandleBias | nul
   const only = votes[0];
   if (!bias || !only) return { decidedBy: 'single', chosen: 0 };
   return { decidedBy: 'single', chosen: 0, allowNow: only.raw.state === 'ENTER_NOW' && !!strongDir && only.raw.direction === strongDir };
+}
+
+/**
+ * Leitor cuja prosa e checklist vao para a tela (25/11/2026): o que pediu o
+ * mesmo estado da decisao final (na mesma direcao, se ela tiver direcao); se
+ * nenhum, o da mesma direcao; empate, o primeiro. null = nenhum bate e a tela
+ * mostra so o resumo do codigo.
+ */
+export function pickDisplayReader(
+  readers: readonly { label: string; raw: { state: string; direction: Direction | null } }[],
+  final: { state: string; direction: Direction | 'neutral' },
+): string | null {
+  const directional = final.direction !== 'neutral';
+  const sameState = readers.find((r) => r.raw.state === final.state && (!directional || r.raw.direction === final.direction));
+  if (sameState) return sameState.label;
+  const sameDirection = directional ? readers.find((r) => r.raw.direction === final.direction) : undefined;
+  return sameDirection?.label ?? null;
 }
 
 // ---------------------------------------------------------------------------

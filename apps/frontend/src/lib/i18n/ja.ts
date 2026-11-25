@@ -680,7 +680,7 @@ export default {
         flipped: '以前のプランがローソク足の確定で無効になったため、方向が反転しました。',
         underPressure: 'このセットアップの以前のプランは圧力を受けています。読みが一致しなかったか、トレンドが逆に転じたため、今回の読みは決まりません。',
         reasons: { neutral_direction: 'ローソク足に明確な方向がありません。', conflicting_direction: 'シグナルの向きが分かれています。', no_geometry: '現在、リスクルールに合うエントリーがありません。', no_majority: 'AIの読みが分かれたため、この読みは「待機」です。', against_trend: 'ここでのエントリーは、上位の時間足のトレンドに逆らうことになります。', news_event: '影響の大きいニュースが近づいています。', stale_print: 'チャート画像が古く、エントリーは古い価格に基づくことになります。', no_data: 'この銘柄のローソク足データがありません。', veto_news: '影響の大きいニュースが近いため、AIがエントリーを見送りました。', veto_structure_broken: 'AIはこのエントリーに逆らって構造が崩れたと判断しました。', veto_stale_print: 'AIはチャート画像が古いと判断しました。', veto_not_a_chart: '画像はトレードチャートではありません。', veto_unclear_chart: 'チャートが不鮮明で読み取れません。', veto_conflicting_signals: 'AIが矛盾するシグナルを検出しました。' },
-        strongRead: '強い読み', strongReadNote: '3人のリーダー全員が一致しました。',
+        strongRead: '強い読み', strongReadNote: '3人のリーダー全員が一致しました。', readersDisagreed: "リーダーの判断が分かれました。この判断はローソク足の構造によるものです。",
         breakoutBuy: 'ブレイクで買い', breakoutSell: 'ブレイクで売り',
         breakoutAbove: 'ローソク足が{level}を上回って確定してから{entry}でエントリー。', breakoutBelow: 'ローソク足が{level}を下回って確定してから{entry}でエントリー。',
       },

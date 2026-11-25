@@ -129,7 +129,8 @@ export type ValidatorReason =
   | 'neutral_direction'
   | 'conflicting_direction'
   | 'no_majority'
-  | 'against_trend';
+  | 'against_trend'
+  | 'reader_no_trade';
 
 /** Uma mudanca de estado feita pelo codigo, gravada em `validatorNotes`. */
 export interface ValidatorNote {
@@ -262,6 +263,8 @@ export interface SignalDecisionInput {
    */
   allowNow?: boolean;
   noMajority?: boolean;
+  /** filter-2026-11-25: algum leitor usado disse NO_TRADE, entao nunca ENTER_NOW (no maximo WATCH). */
+  capWatch?: boolean;
 }
 
 export interface SignalDecisionResult {
@@ -637,6 +640,12 @@ export async function decideSignal(input: SignalDecisionInput): Promise<SignalDe
 
   let { state, levels } = chosen;
   const notes = [...chosen.notes];
+  // filter-2026-11-25 no caminho sem velas (o das velas ja nao chega a ENTER_NOW com capWatch).
+  if (input.capWatch && state === 'ENTER_NOW') {
+    notes.push({ from: 'ENTER_NOW', to: 'WATCH', reason: 'reader_no_trade' });
+    state = 'WATCH';
+    levels = NULL_LEVELS;
+  }
   const stalePrint = !!real && positive(input.currentPrice) && Math.abs(real.price - input.currentPrice) > ENGINE_RULES.stalePrintAtr * (real.atr as number);
 
   // News guard: com evento High na janela, o plano vira condicional (WATCH).
@@ -828,7 +837,7 @@ function decideFromCandles(input: SignalDecisionInput, real: RealDataInput, mode
       else direction = prior.direction;
     }
   }
-  const allowNow = input.allowNow ?? input.state === 'ENTER_NOW';
+  const allowNow = !input.capWatch && (input.allowNow ?? input.state === 'ENTER_NOW');
   const against = direction !== 'neutral' && againstTrend(view, direction);
   let waitReason = null as WaitReason | null;
   let entry: EntryPlan | null = null;
@@ -865,8 +874,8 @@ function modelPlanChoice(input: SignalDecisionInput, real: RealDataInput, modelP
   });
   if (typeof ev === 'string') return null;
   // A IA nao recusa mais por stop ou alvo: o plano dela entra pelo menos como WATCH.
-  const start: SignalState = model === 'ENTER_NOW' ? 'ENTER_NOW' : 'WATCH';
-  const picked = chooseState(start, ev, true);
+  const start: SignalState = model === 'ENTER_NOW' && !input.capWatch ? 'ENTER_NOW' : 'WATCH';
+  const picked = chooseState(start, ev, !input.capWatch);
   if (picked.state === 'ENTER_NOW') return { plan: ev.plan, evaluation: ev, chosen: picked };
   if (picked.state === 'WATCH' && watchLevelsWithMove(ev.plan, input.symbol, real).levels) return { plan: ev.plan, evaluation: ev, chosen: picked };
   return null;

@@ -103,5 +103,7 @@ export interface AIAnalysisResponse {
     /** Tres leitores com voto (23/11/2026). */
     readers?: import('../../modules/ai/engine-contract').EngineReaderRecord[];
     vote?: import('../../modules/ai/engine-contract').EngineVoteRecord;
+    /** Leitor cuja prosa e checklist foram gravados; null = nenhum bateu com a decisao final. */
+    displayReader?: string | null;
   };
 }

@@ -249,6 +249,8 @@ export interface AIAnalysisResponse {
       contract?: { no_trade_reason?: string | null; no_trade_reason_code?: string | null; no_trade_reason_params?: Record<string, string | number> } | null;
       /** Os leitores concordaram? `strongRead` = os 3 de acordo. */
       vote?: { agreement?: string; strongRead?: boolean; earlyMajority?: boolean; decidedBy?: string } | null;
+      /** Leitor cuja prosa foi gravada; null = nenhum bateu com a decisao final (so o resumo do codigo). Ausente = analise antiga. */
+      displayReader?: string | null;
     } | null;
     /** Resumo montado pelo codigo (motor novo, so analise nova com velas reais); a tela escreve a frase a partir dele. */
     codeSummary?: CodeSummary | null;
